@@ -161,3 +161,24 @@ test('narrated quote checking does not confuse the subject of someone else’s w
   const allowed='Марта [#8] напомнила, что Саня снова покупает кофемашину. Дима сказал: «Саня купил кофемашину» [#9].';
   assert.doesNotThrow(()=>verifyEditorialEvidence(allowed,input));
 });
+
+
+test('real Groq mixed-alphabet speaker hallucination is rejected',()=>{
+  const source=[
+    {message_id:1020,display_name:'Марта',body:'Опаздываешь снова?'},
+    {message_id:1030,display_name:'Дима',body:'День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит.'}
+  ];
+  const invented='Мартa подытожила всё это величие: «День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит.» [#1030]';
+  assert.throws(()=>verifyEditorialEvidence(invented,source),err=>err instanceof EvidenceValidationError && /wrong Telegram speaker/.test(err.message));
+  const accurate='Дима подытожил день: «День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит.» [#1030]';
+  assert.doesNotThrow(()=>verifyEditorialEvidence(accurate,source));
+});
+test('explicit wrong speaker by name and source ID is rejected even for exact quote',()=>{
+ const sample=[
+  {message_id:41,display_name:'Саня',body:'Я купил кофе.'},
+  {message_id:42,display_name:'Марта',body:'Я отказалась от кофе.'}
+ ];
+ assert.throws(()=>verifyEditorialEvidence('Саня ответил: «Я отказалась от кофе.» [#42]',sample),
+  EvidenceValidationError);
+ assert.doesNotThrow(()=>verifyEditorialEvidence('Марта ответила: «Я отказалась от кофе.» [#42]',sample));
+});
