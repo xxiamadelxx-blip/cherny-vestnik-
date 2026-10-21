@@ -41,22 +41,6 @@ export function normalizeMessage(message) {
   };
 }
 
-// Evenly sample a day instead of silently selecting only the final arguments.
-export function selectTranscript(rows, maxChars = 6500, maxEntries = 85) {
-  if (!rows.length) return {transcript:'', sampled:0, ids:[]};
-  const selected = [];
-  const ids = [];
-  const count = Math.min(rows.length, maxEntries);
-  for (let i = 0; i < count; i++) {
-    const idx = count === 1 ? 0 : Math.floor((i * (rows.length - 1)) / (count - 1));
-    const m = rows[idx];
-    ids.push(Number(m.message_id));
-    const budget = Math.max(24, Math.floor(maxChars / count) - 32);
-    selected.push(`[#${m.message_id}] ${cleanText(m.display_name, 32)}: ${cleanText(m.body, budget)}`);
-  }
-  return {transcript: selected.join('\n').slice(0, maxChars), sampled: selected.length, ids};
-}
-
 export function countParticipants(rows) {
   const counts = new Map();
   for (const m of rows) counts.set(m.user_id, {name: m.display_name, count: (counts.get(m.user_id)?.count || 0) + 1});
