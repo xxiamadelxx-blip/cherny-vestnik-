@@ -7,7 +7,7 @@ import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 
 const OK = () => new Response('ok', {status:200});
-const PUBLIC_VERSION = '0.2.0';
+const PUBLIC_VERSION = '0.2.1';
 
 function authorizedWebhook(request, secret) {
   const supplied = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
