@@ -20,7 +20,7 @@ jobs:
           node-version: '22'
       - name: Unit tests and syntax
         run: npm run check && npm test
-      - name: Real Groq editorial QA with source-grounded financial claims and character names
+      - name: Live acceptance: correct source speakers, valid citations and zero foreign-script leakage
         run: node scripts/editorial-live.mjs
       - name: Preserve independent editorial acceptance evidence
         if: always()
