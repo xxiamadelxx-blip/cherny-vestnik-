@@ -99,7 +99,7 @@ function verifyQuotedSpeaker(text,match,sourceRows) {
   if(!named)return;
   const asserted=speakerKey(named[1]);
   if(speakers.has(asserted)&&asserted!==actual)
-    throw new EvidenceValidationError('verbatim quote attributed to the wrong Telegram speaker');
+    throw new EvidenceValidationError('verbatim quote falsely attributed to the wrong Telegram speaker');
 }
 
 export function verifyEditorialEvidence(body, sourceRows) {
