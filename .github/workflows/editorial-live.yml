@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# One-shot Groq regression after Unicode-aware quote-speaker verification and 88 green tests.
+# Live editorial verification after quality rubric changes.
 on:
   workflow_dispatch:
   push:
@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
       - name: Unit tests and syntax
         run: npm run check && npm test
-      - name: 'Live acceptance: correct speakers, valid citations, no foreign-script leakage'
+      - name: Live editorial quality and source verification
         run: node scripts/editorial-live.mjs
       - name: Preserve independent editorial acceptance evidence
         if: always()
