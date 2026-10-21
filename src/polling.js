@@ -11,6 +11,12 @@ export function pollBatchSize(env={}){
  const n=Number(env.TELEGRAM_POLL_BATCH||40);
  return Number.isSafeInteger(n)?Math.max(1,Math.min(100,n)):40;
 }
+// A polling result with fewer than limit entries does NOT prove that Telegram's
+// queue is empty. Only a subsequent getUpdates response with zero entries does.
+export function pollPageBudget(env={}){
+ const n=Number(env.TELEGRAM_POLL_PAGES||4);
+ return Number.isSafeInteger(n)?Math.max(1,Math.min(4,n)):4;
+}
 export async function pollTelegram(env,{now=Date.now(),fetcher=fetch,handleUpdate}={}) {
  if(!env.DB||typeof handleUpdate!=='function')throw Error('Polling requires database and update handler');
  if(!env.TELEGRAM_BOT_TOKEN)throw Error('Missing Telegram bot token');
