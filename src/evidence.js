@@ -78,6 +78,30 @@ export function verifyNarratedQuoteAttribution(body,sourceRows) {
   return checked;
 }
 
+// Match an explicit named speaker immediately before a verbatim quote.
+// JS \b treats Cyrillic letters as non-word characters; use Unicode \p{L}.
+const QUOTE_SPEAKER_PREFIX=/(?<![\p{L}])([\p{Lu}][\p{Ll}]{2,22})\s+(?:сказал[а]?|ответил[а]?|заявил[а]?|пояснил[а]?|напомнил[а]?|спросил[а]?|добавил[а]?|признал[а]?|подытожил[а]?|воскликнул[а]?|выдал[а]?|пошутил[а]?|рыкнул[а]?|отметил[а]?|подчеркнул[а]?|заметил[а]?|сообщил[а]?|процитировал[а]?)(?:[^.!?«»\n]{0,100})[:：]?\s*$/u;
+const QUOTE_LABEL_PREFIX=/(?<![\p{L}])([\p{Lu}][\p{Ll}]{2,22})\s*:\s*$/u;
+function speakerKey(raw) {
+  const input=String(raw||'').normalize('NFKC').toLocaleLowerCase('ru-RU');
+  // Catch a copied Cyrillic name with one Latin homoglyph, e.g. "Мартa".
+  if(!/[а-яё]/iu.test(input))return input;
+  const latin={a:'а',e:'е',o:'о',p:'р',c:'с',x:'х',y:'у',k:'к',m:'м',t:'т',h:'н',b:'в'};
+  return input.replace(/[aeopcyxkmt hb]/g,char=>latin[char]||char);
+}
+function verifyQuotedSpeaker(text,match,sourceRows) {
+  const cited=sourceRows.find(row=>Number(row.message_id)===Number(match[2]));
+  if(!cited)return;
+  const actual=speakerKey(String(cited.display_name||'').split(/\s+/)[0]);
+  const speakers=new Set(sourceRows.map(row=>speakerKey(String(row.display_name||'').split(/\s+/)[0])));
+  const prefix=text.slice(Math.max(0,match.index-150),match.index).split(/[.!?\n]/u).at(-1);
+  const named=prefix.match(QUOTE_SPEAKER_PREFIX)||prefix.match(QUOTE_LABEL_PREFIX);
+  if(!named)return;
+  const asserted=speakerKey(named[1]);
+  if(speakers.has(asserted)&&asserted!==actual)
+    throw new EvidenceValidationError('verbatim quote attributed to the wrong Telegram speaker');
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
@@ -101,6 +125,7 @@ export function verifyEditorialEvidence(body, sourceRows) {
     const row=entries.get(id);
     if(!row||!normalized(row.body).includes(normalized(match[1])))
       throw new EvidenceValidationError('verbatim quote does not match the cited message');
+    verifyQuotedSpeaker(text,match,sourceRows);
   }
   verifyNarratedQuoteAttribution(text,sourceRows);
   verifyNoFabricatedScenes(text,sourceRows);
