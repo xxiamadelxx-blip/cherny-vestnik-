@@ -82,3 +82,28 @@ test('all 4096 characters of a Telegram message survive ingestion and chunk pack
   assert.equal(msg.body.length,4096);
   assert.ok(packTranscript([msg]).transcript.endsWith('!'));
 });
+
+
+test('cron resumes a crashed working digest after lease expires', async()=>{
+  const f=fixture();
+  await handleUpdate(f.message(1,'/enable'),f.env,f.fetcher,NOW-4_000_000);
+  for(let i=1001;i<=1100;i++)await handleUpdate(f.message(i,'Спор за пиццу, проверка #'+i),f.env,f.fetcher,NOW);
+  assert.equal(await publishDigest(f.env,'-100123',NOW,f.fetcher),'processing');
+  assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,80);
+  f.sqlite.prepare("UPDATE digests SET status='working',lease_until=?").run(NOW+60_000);
+  const result=await runCron(f.env,NOW+120_000,f.fetcher);
+  assert.equal(result[0].result,'sent');
+  assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,100);
+  assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+});
+
+test('cron preserves source messages older than four days while their digest is unfinished',async()=>{
+  const f=fixture();
+  await handleUpdate(f.message(1,'/enable'),f.env,f.fetcher,NOW-4_000_000);
+  for(let i=1001;i<=1100;i++)await handleUpdate(f.message(i,'Сохранить до полного анализа '+i),f.env,f.fetcher,NOW);
+  assert.equal(await publishDigest(f.env,'-100123',NOW,f.fetcher),'processing');
+  const result=await runCron(f.env,NOW+5*86_400_000,f.fetcher);
+  assert.equal(result[0].result,'sent');
+  assert.equal(f.query('SELECT COUNT(*) AS n FROM messages')[0].n,100);
+  assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,100);
+});
