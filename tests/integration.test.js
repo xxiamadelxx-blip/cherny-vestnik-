@@ -27,7 +27,7 @@ function fixture() {
   let failSend=false;
   let failAI=false;
   let onGroq=null;
-  let responseText='💀 ЧЁРНЫЙ ВЕСТНИК\n\nГлавная новость: Вася [#101] возмущался происходящим, а Петя [#102] включился в дискуссию. Какой ёбаный цирк.';
+  let responseText='💀 ЧЁРНЫЙ ВЕСТНИК\n\nГлавная новость: Вася [#101] возмущался происходящим. Какой ёбаный цирк.';
   let sendsAttempted=0;
   let failAtSend=null;
   const fetcher=async(url,opts)=>{
