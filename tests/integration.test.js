@@ -227,3 +227,19 @@ test('privacy wipe clears cached Groq reduction notes',async()=>{
   await handleUpdate(f.makeMsg({id:5,text:'/wipe'}),f.env,f.fetcher,NOW);
   assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_reductions')[0].n,0);
 });
+
+
+test('fabricated verbatim quote is blocked before Telegram delivery, with editorial backoff',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ await handleUpdate(f.makeMsg({id:101,text:'Я купил картошку на ужин'}),f.env,f.fetcher,NOW-300000);
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася заявил: «Я ограбил банк» [#101]. Это вообще ёбаный цирк.');
+ const previousSends=f.sent.length;
+ await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/Editorial verification rejected/);
+ assert.equal(f.sent.length,previousSends,'must never send libelous mock quote');
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
+ assert.equal(f.query('SELECT body FROM digests')[0].body,null);
+ assert.equal(f.query('SELECT lease_until FROM digests')[0].lease_until,NOW+15*60_000);
+ assert.equal(await publishDigest(f.env,'-1001111',NOW+60_000,f.fetcher),'locked');
+ assert.equal(f.groqCalls,1,'must not burn more free Groq credits during cooldown');
+});
