@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/preflight.yml'
+      - 'scripts/preflight.mjs'
 permissions:
   contents: read
 jobs:
