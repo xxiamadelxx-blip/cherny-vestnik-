@@ -20,8 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Unit tests
-        run: npm test
+      - name: Syntax check and unit tests
+        run: npm run check && npm test
       - name: Run production bot logic with 300 synthetic messages and REAL Groq (no Telegram delivery)
         run: node scripts/simulate-300.mjs
       - name: Save generated report and chat transcript
