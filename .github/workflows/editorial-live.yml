@@ -1,4 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
+# One-shot evidence regression: prevent fabricated bystanders and invented incidents.
 on:
   workflow_dispatch:
   push:
