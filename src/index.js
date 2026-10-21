@@ -5,7 +5,7 @@ import {
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
-import {verifyPublishedDigest,verifyEditorialEvidence,fetchCitedMessages,EvidenceValidationError} from './evidence.js';
+import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.2';
@@ -198,6 +198,7 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         body=(await composeDigest({env,day,total,notes:chunks.map(c=>({note:c.note,ids:JSON.parse(c.ids_json)})),previous,fetcher,chatId,checkConsent})).body;
         body += `\n\n📊 Прочитано и обработано: ${processed} из ${total} сообщений.`;
       }
+      body=canonicalDigestDate(body,day);
       // Unaccepted first draft is durable; a 429 in fact-checking will not
       // trigger a second first-draft Groq completion after quota reset.
       await checkConsent();
@@ -208,6 +209,7 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       // Guard every reference and verbatim quote with the original cited rows.
       // The query is bounded by actual citation IDs, not whole-day message count.
       const citedRows=await fetchCitedMessages({db,chatId,body});
+      body=correctNearbyNameTypos(body,citedRows);
       try {
         verifyEditorialEvidence(body,citedRows);
       } catch (err) {
@@ -217,10 +219,13 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         const revised=await reviseDigest({env,day,draft:body,citedRows,fetcher});
         const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
         body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
+        body=canonicalDigestDate(body,day);
+        const verifiedRows=await fetchCitedMessages({db,chatId,body});
+        body=correctNearbyNameTypos(body,verifiedRows);
         await checkConsent();
         await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
           body,now,chatId,day);
-        await verifyPublishedDigest({db,chatId,body});
+        verifyEditorialEvidence(body,verifiedRows);
       }
       await checkConsent();
       await run(db, `UPDATE digests SET body=?,editorial_draft=NULL,status='working',updated_at=?
