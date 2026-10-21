@@ -49,3 +49,57 @@ export async function verifyPublishedDigest({db,chatId,body,rows=null}) {
   if(!rows)rows=await fetchCitedMessages({db,chatId,body});
   return verifyEditorialEvidence(body,rows);
 }
+
+
+// The authoritative release date is the day stored in D1, not an AI guess.
+export function canonicalDigestDate(body, day) {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day))throw new Error('Invalid digest day');
+  const [year,month,dayOfMonth]=day.split('-');
+  const display=dayOfMonth+'.'+month+'.'+year;
+  const lines=String(body??'').split('\n');
+  const header=lines.findIndex((line,index)=>index<3&&line.includes('ЧЁРНЫЙ ВЕСТНИК'));
+  if(header<0)return '💀 ЧЁРНЫЙ ВЕСТНИК | '+display+'\n\n'+String(body??'');
+  const iso=/\b20\d{2}-\d{2}-\d{2}\b/;
+  const dotted=/\b\d{2}[.\/]\d{2}[.\/]20\d{2}\b/;
+  if(iso.test(lines[header]))lines[header]=lines[header].replace(iso,display);
+  else if(dotted.test(lines[header]))lines[header]=lines[header].replace(dotted,display);
+  else lines[header]=lines[header]+' | '+display;
+  return lines.join('\n');
+}
+
+// Conservative non-generative correction for a dropped INTERIOR letter in the
+// nominative name immediately attached to a message source pointer.
+// Never edit text inside a quotation or try to guess wholly different names.
+export function correctNearbyNameTypos(body, rows) {
+  let text=String(body??'');
+  const source=new Map(rows.map(r=>[Number(r.message_id),String(r.display_name||'').split(/\s+/)[0]]));
+  const pointers=[...text.matchAll(/\[#(\d+)\]/g)].reverse();
+  for(const pointer of pointers){
+    const name=source.get(Number(pointer[1]));
+    if(!name||name.length<4)continue;
+    const from=Math.max(0,pointer.index-170);
+    const span=text.slice(from,pointer.index);
+    if(new RegExp('(?<![\\p{L}])'+name+'(?![\\p{L}])','iu').test(span))continue;
+    const tokens=[...span.matchAll(/\b[А-ЯЁ][а-яё]{2,20}\b/gu)];
+    for(const token of tokens){
+      const candidate=token[0];
+      if(candidate.length!==name.length-1)continue;
+      let match=false;
+      for(let i=1;i<name.length-1;i++){
+        if((name.slice(0,i)+name.slice(i+1)).toLocaleLowerCase('ru-RU')===candidate.toLocaleLowerCase('ru-RU')){
+          match=true;break;
+        }
+      }
+      if(!match)continue;
+      const localIndex=token.index;
+      // Never mutate a quoted phrase: the quote guard checks literal source text.
+      const prefix=span.slice(0,localIndex);
+      const inQuotes=(prefix.match(/«/g)||[]).length>(prefix.match(/»/g)||[]).length;
+      if(inQuotes)continue;
+      const absolute=from+localIndex;
+      text=text.slice(0,absolute)+name+text.slice(absolute+candidate.length);
+      break;
+    }
+  }
+  return text;
+}
