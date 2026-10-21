@@ -4,6 +4,7 @@ import {
 } from './core.js';
 import {createDigest,analyzeChunk,composeDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
+import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.0';
@@ -88,6 +89,7 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       if (outcome === 'already_sent') await send(env, chatId, 'Сегодня выпуск уже опубликован. Следующий завтра.', fetcher);
       if (outcome === 'locked') await send(env, chatId, 'Выпуск уже собирается другим запуском.', fetcher);
       if (outcome === 'processing') await send(env, chatId, '🧠 Полный анализ переписки идёт по частям. Каждое сообщение будет учтено; выпуск появится после завершения анализа, без выборки.', fetcher);
+      if (outcome === 'waiting') await send(env,chatId,'⏳ Groq достиг временного лимита. Обработанные сообщения сохранены, Cron продолжит после сброса квоты. Проверяй /status.',fetcher);
     } else if (cmd.name === 'wipe') {
       await run(env.DB, 'DELETE FROM messages WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM digests WHERE chat_id=?', chatId);
@@ -204,6 +206,7 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
     }
     await run(db, `UPDATE digests SET lease_until=0,status='pending',updated_at=?
       WHERE chat_id=? AND local_day=? AND status!='sent'`, now,chatId,day);
+    if (err instanceof GroqDeferredError) return 'waiting';
     throw err;
   }
 }
