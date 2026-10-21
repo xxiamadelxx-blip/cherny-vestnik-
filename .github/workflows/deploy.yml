@@ -21,6 +21,7 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      TELEGRAM_TRANSPORT: polling
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,5 +45,5 @@ jobs:
         run: npx wrangler d1 migrations apply cherny-vestnik --remote
       - name: Deploy Worker and 15-minute Cron
         run: npx wrangler deploy
-      - name: Register idempotent Telegram webhook with safe retries
+      - name: Activate DNS-independent Telegram getUpdates polling (preserve backlog)
         run: node scripts/activate-cloudflare.mjs
