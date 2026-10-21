@@ -142,3 +142,14 @@ The v0.2.1 changes do not add paid APIs or automatically upgrade any account tie
 - **PASS**: [latest code deployment](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39682247652) with moderated generation randomness (temperature 0.6), stronger factual guards and full-queue polling. Worker deploy success.
 - **NOT ACCEPTED**: actual joined Telegram test-group receipt, next-day automated delivery, independent human review of all factual inferences, and a new 300/1000-message *live* editorial rehearsal with these latest safeguards. The previous real 1000-message run validated exhaustive processing in an older version but does not automatically certify this updated editor.
 - **Bounded guarantee**: no silent sampling *after Telegram supplies updates*. If Telegram cannot retain/deliver updates during an outage beyond its own retention policy, no bot can reconstruct missing messages; report separately as an external dependency rather than claiming unlimited capture.
+
+## 22 October: verified evidence and quota-resilient rehearsals
+
+- **PASS**: [92/92 tests](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39684030540), including cited quotes in both formats (source before or after quotation), speaker attribution, fabricated bystanders, quota waits, and blocked-draft privacy retention.
+- **PASS (bounded)**: [real Groq 30-message rehearsal](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39682208867). All 30 fictional messages ingested; 4 topics; 22 source ID references. The test predates source-before-quote validation, so it is NOT proof that every literal quote was independently matched.
+- **FAIL / QUOTA DEFERRED**: [real 300-message Groq run](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39682506829) stopped due to repeated Groq quota waits and an obsolete 120-second CI wait cap. Do not count it as full-300 completion.
+- **IN PROGRESS at time of this entry**: [renewed real 300-message run](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39683130597). Inspect conclusion and artifact before claiming PASS. This run uses its own immutable source SHA, not later fixes.
+- **PASS**: [latest Cloudflare Worker deployment](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39683956201) of quota and editorial safeguards.
+- **PASS**: updated AI rehearsal scripts record current-run PASS, FAIL or DEFERRED plus actually analyzed source counts; CI removes stale checked-in success report before each attempt.
+- **PASS**: after two failed fact-check rewrites the digest enters needs_review, stopping unlimited free-token consumption; admin /retry can resume. The status is visible and blocked source data has a 4-day retention cap.
+- **NOT YET ACCEPTED**: complete semantic factuality for arbitrary paraphrases, real opted-in Telegram group delivery, next-day Cron delivery, and a new successful fully audited real 300/1000-message rehearsal.
