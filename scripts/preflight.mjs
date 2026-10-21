@@ -49,7 +49,7 @@ export async function preflight({ env = process.env, fetcher = fetch, log = cons
     botUsername = bot.result.username;
   });
 
-  await probe('Groq model and completion', ['GROQ_API_KEY'], async () => {
+  await probe(env.PREFLIGHT_SKIP_COMPLETION==='1' ? 'Groq model availability' : 'Groq model and completion', ['GROQ_API_KEY'], async () => {
     const models = await requestJson(fetcher,
       'https://api.groq.com/openai/v1/models',
       {headers:{Authorization:`Bearer ${env.GROQ_API_KEY}`}}, 'Groq models');
@@ -90,7 +90,7 @@ export async function preflight({ env = process.env, fetcher = fetch, log = cons
     log(`PREFLIGHT INCOMPLETE: ${checks.length} passed, ${problems.length} blocked/failed. No deployments or Telegram sends performed.`);
     throw new Error(`Preflight incomplete: ${problems.join('; ')}`);
   }
-  log('PREFLIGHT PASS: Telegram, Groq, and Cloudflare tested against live APIs. Not deployed. No Telegram group messages read or sent.');
+  log(env.PREFLIGHT_SKIP_COMPLETION==='1'?'PREFLIGHT PASS: Telegram, Groq model listing, Cloudflare tested. Completion intentionally skipped to save free quota. Not deployed.':'PREFLIGHT PASS: Telegram, Groq completion, Cloudflare tested. Not deployed. No group messages read or sent.');
   return {checks, botUsername};
 }
 
