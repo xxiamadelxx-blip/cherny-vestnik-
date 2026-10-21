@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,verifyNoFabricatedScenes} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,verifyNoFabricatedScenes,verifyNarratedQuoteAttribution} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -143,4 +143,21 @@ test('invented drinking or arrest allegation cannot be laundered with an unrelat
   const data=[{message_id:6,display_name:'Саня',body:'Я сэкономил 50 рублей.'}];
   assert.throws(()=>verifyEditorialEvidence('Саня пропил все деньги [#6].',data),EvidenceValidationError);
   assert.throws(()=>verifyEditorialEvidence('Саню арестовали [#6].',data),EvidenceValidationError);
+});
+
+
+test('direct attribution guard rejects Groq quote copied from Dima but labelled Marta with Latin lookalike',()=>{
+  const input=[{message_id:1030,display_name:'Дима',body:'День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит.'},
+    {message_id:1020,display_name:'Марта',body:'Уже второй комплект пяти минут, у тебя время продаётся по подписке?'}];
+  const wrong='Мартa подытожила всё это величие: «День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит» [#1030].';
+  assert.throws(()=>verifyEditorialEvidence(wrong,input),error=>error instanceof EvidenceValidationError&&/falsely attributed/.test(error.message));
+  const corrected='Дима подытожил всё это величие: «День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит» [#1030].';
+  assert.equal(verifyNarratedQuoteAttribution(corrected,input),1);
+  assert.equal(verifyEditorialEvidence(corrected,input).quotesChecked,1);
+});
+test('narrated quote checking does not confuse the subject of someone else’s words with the speaker',()=>{
+  const input=[{message_id:8,display_name:'Марта',body:'Саня опять купил кофемашину.'},
+    {message_id:9,display_name:'Дима',body:'Саня купил кофемашину.'}];
+  const allowed='Марта [#8] напомнила, что Саня снова покупает кофемашину. Дима сказал: «Саня купил кофемашину» [#9].';
+  assert.doesNotThrow(()=>verifyEditorialEvidence(allowed,input));
 });
