@@ -32,7 +32,9 @@ jobs:
           done
       - run: npm install --no-audit --no-fund
       - run: npm run check && npm test
-      - name: Verify real Telegram, Groq and Cloudflare APIs before deploying
+      - name: Verify Telegram, available Groq model and Cloudflare (no token-spending completion)
+        env:
+          PREFLIGHT_SKIP_COMPLETION: '1'
         run: node scripts/preflight.mjs
       - name: Reuse or create Cloudflare D1 automatically
         run: node scripts/provision-d1.mjs
