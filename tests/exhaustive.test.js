@@ -9,7 +9,7 @@ import {analyzeChunk,composeDigest} from '../src/ai.js';
 const NOW=Date.UTC(2026,9,21,18,0);
 function fixture(total=1000) {
   const sqlite=new DatabaseSync(':memory:');
-  for(const path of ['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql'])
+  for(const path of ['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql'])
     sqlite.exec(readFileSync(new URL('../migrations/'+path,import.meta.url),'utf8'));
   const DB={prepare(sql){const q=sqlite.prepare(sql);return {bind(...a){return {
     first:async()=>q.get(...a)||null,all:async()=>({results:q.all(...a)}),
