@@ -48,6 +48,7 @@ export async function run1000({key=process.env.GROQ_API_KEY,fetcher=fetch,log=co
  for(const m of data)await handleUpdate(update(m),env,isolated,m.timestamp);
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n,1000);
  let outcome='processing',attempts=0;
+ try {
  while(outcome==='processing'||outcome==='waiting'){
    if(attempts){
      const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
@@ -66,6 +67,23 @@ export async function run1000({key=process.env.GROQ_API_KEY,fetcher=fetch,log=co
    if(attempts>52)throw Error('Groq quota or throughput prevented a fully completed 1000-message rehearsal');
  }
  assert.equal(outcome,'sent','Partial or waiting digest is not accepted');
+ } catch(err) {
+   const count=sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n;
+   const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
+   mkdirSync('reports',{recursive:true});
+   writeFileSync('reports/simulation-1000-run.md',[
+     '# Real Groq 1000-message rehearsal: NOT ACCEPTED',
+     '',
+     '- Outcome: '+(/quota deferred/.test(String(err))?'DEFERRED (free Groq quota)':'FAIL'),
+     '- Source messages recorded: 1000/1000',
+     '- Fully analyzed and checkpointed within this CI run: '+count+'/1000',
+     '- Groq HTTP calls: '+groq,
+     '- Quota reset not before: '+(budget?.next_attempt_at?new Date(budget.next_attempt_at).toISOString():'not available'),
+     '- Reason: '+String(err.message).slice(0,230),
+     '- No complete newspaper accepted or delivered. Unlike production D1, this CI SQLite is memory-only.'
+   ].join('\n'));
+   throw err;
+ }
  const chunks=sqlite.prepare('SELECT * FROM digest_chunks ORDER BY chunk_no').all();
  const seen=new Set(chunks.flatMap(x=>JSON.parse(x.ids_json)));
  const processed=chunks.reduce((a,x)=>a+x.processed,0);
@@ -101,6 +119,7 @@ export async function run1000({key=process.env.GROQ_API_KEY,fetcher=fetch,log=co
  log('REAL GROQ 1000: '+passed+'/'+Object.keys(checks).length+', '+processed+' messages, '+chunks.length+' batches, '+groq+' calls');
  log(digest.slice(0,3500));
  if(passed!==Object.keys(checks).length)throw Error('Full 1000-message test FAILED');
+ writeFileSync('reports/simulation-1000-run.md','# Real Groq 1000-message rehearsal: TECHNICAL PASS\n\n- 1000/1000 synthetic messages analyzed with real Groq.\n- Groq API calls: '+groq+'.\n- Telegram mocked; no group delivery.\n');
  return {checks,digest};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1]))
