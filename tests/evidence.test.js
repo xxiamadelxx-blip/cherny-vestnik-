@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,verifyNoFabricatedScenes} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -120,4 +120,27 @@ test('foreign script absent from any cited source is rejected rather than silent
    {cited:1,quotesChecked:1});
  const chinese=[{message_id:7,display_name:'Ли',body:'Я написал 怒吼 специально.'}];
  assert.doesNotThrow(()=>verifyEditorialEvidence('В сообщении было 怒吼 [#7]',chinese));
+});
+
+
+test('newly invented plumber and washing-machine episode is rejected even with valid nearby citations',()=>{
+  const data=[
+    {message_id:1015,display_name:'Саня',body:'Я заказал кофемашину. Это инвестиция.'},
+    {message_id:1026,display_name:'Саня',body:'Она экономит по 50 рублей в день.'}
+  ];
+  const inaccurate='Саня купил машину [#1015]. А пока сантехник уже бьёт по столу: ты слил кофе в стиральную машину [#1026].';
+  assert.throws(()=>verifyEditorialEvidence(inaccurate,data),
+    e=>e instanceof EvidenceValidationError&&/washing-machine|unsourced/.test(e.message));
+});
+test('unsourced literal third party with physical actions is rejected, but marked comparisons remain acceptable',()=>{
+  const data=[{message_id:5,display_name:'Игорь',body:'Ключи всё время были в кармане.'}];
+  assert.throws(()=>verifyNoFabricatedScenes('Охранник прибежал и ударил Игоря [#5].',data),EvidenceValidationError);
+  assert.doesNotThrow(()=>verifyNoFabricatedScenes('Игорь ищет ключи, как сантехник без инструментов.',data));
+  assert.doesNotThrow(()=>verifyNoFabricatedScenes('Игорь и сантехник обсуждали ключи [#5].',
+    [{message_id:5,body:'Я и сантехник обсуждали ключи.',display_name:'Игорь'}]));
+});
+test('invented drinking or arrest allegation cannot be laundered with an unrelated valid ID',()=>{
+  const data=[{message_id:6,display_name:'Саня',body:'Я сэкономил 50 рублей.'}];
+  assert.throws(()=>verifyEditorialEvidence('Саня пропил все деньги [#6].',data),EvidenceValidationError);
+  assert.throws(()=>verifyEditorialEvidence('Саню арестовали [#6].',data),EvidenceValidationError);
 });
