@@ -1,12 +1,6 @@
 name: Synthetic 300 Message Groq Report
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/simulation-300.yml'
-      - 'src/ai.js'
-      - 'scripts/simulate-300.mjs'
 permissions:
   contents: read
 jobs:
