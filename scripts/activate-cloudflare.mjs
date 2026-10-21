@@ -28,8 +28,13 @@ export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms
       try {reply=await result.json();}catch{reply=null;}
       if(result.ok&&reply?.ok===true)return true;
       // 400/401/403 are configuration errors, not transient.
-      if(result.status!==429&&result.status<500)
-        throw new Error('Telegram setWebhook rejected request (HTTP '+result.status+')');
+      if(result.status!==429&&result.status<500) {
+        const description=String(reply?.description||'unspecified Telegram rejection')
+          .replaceAll(token,'[token]').replaceAll(secret,'[secret]').replaceAll(url,'[worker]')
+          .replace(/https?:\/\/[^\s]+/g,'[url]')
+          .slice(0,180);
+        throw new Error('Telegram setWebhook rejected request (HTTP '+result.status+'): '+description);
+      }
       if(attempt===3)break;
       const retryHeader=Number(result.headers?.get('retry-after'));
       const backoff=Number.isFinite(retryHeader)&&retryHeader>0?
