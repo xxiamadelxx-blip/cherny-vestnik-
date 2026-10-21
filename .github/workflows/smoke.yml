@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/smoke.yml'
+      - 'scripts/smoke.mjs'
 permissions:
   contents: read
 jobs:
