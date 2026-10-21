@@ -71,11 +71,17 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
    display_name:SPEAKERS[person].name,body,
    posted_at:NOW-60*60*1000+index*100000
  }));
- let aiCalls=0;const sent=[];
+ let aiCalls=0;const sent=[];let lastDraft='';
  const isolated=async(url,options)=>{
    const endpoint=String(url);
    if(endpoint.startsWith('https://api.groq.com/')){
-     aiCalls++;return fetcher(url,options);
+     aiCalls++;
+     const response=await fetcher(url,options);
+     if(response.ok){
+       const copy=await response.clone().json();
+       lastDraft=String(copy?.choices?.[0]?.message?.content||'');
+     }
+     return response;
    }
    if(endpoint.endsWith('/getChatMember')&&endpoint.includes('api.telegram.org'))
      return Response.json({ok:true,result:{status:'creator'}});
@@ -92,7 +98,24 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  for(const message of source) await handleUpdate(update(message),env,isolated,message.posted_at);
  const ingested=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
  assert.equal(ingested,30);
- const outcome=await publishDigest(env,CHAT,NOW,isolated);
+ let outcome;
+ try {outcome=await publishDigest(env,CHAT,NOW,isolated);}
+ catch(error){
+   mkdirSync('reports',{recursive:true});
+   // Only synthetic fictional messages and the resulting draft, never user chats.
+   writeFileSync('reports/editorial-live-failed.md',[
+      '# Unaccepted Groq editorial draft (fictional test only)',
+      'Reason: '+String(error.message),
+      'Groq calls: '+aiCalls,
+      '',
+      '## Rejected output',
+      '~~~text',lastDraft,'~~~',
+      '',
+      '## Original fictional source messages',
+      ...source.map(m=>'[#'+m.message_id+'] '+m.display_name+': '+m.body)
+   ].join('\n'));
+   throw error;
+ }
  const stored=sqlite.prepare('SELECT status,body FROM digests WHERE chat_id=?').get(CHAT);
  assert.equal(outcome,'sent','live Groq did not complete the accepted digest');
  assert.equal(stored.status,'sent');
