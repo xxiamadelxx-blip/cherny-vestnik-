@@ -7,6 +7,7 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {handleUpdate,publishDigest} from '../src/index.js';
 import {verifyEditorialEvidence} from '../src/evidence.js';
+import {analyzeRoastTone,assessRoastSignals} from '../src/roast-quality.js';
 
 const CHAT='-10055001234', NOW=Date.UTC(2026,9,21,18,0,0);
 const SPEAKERS=[
@@ -136,7 +137,9 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  assert.equal(total,30);
  assert.ok(aiCalls>=1&&aiCalls<=4,'bounded Groq calls including editorial correction');
  assert.ok(sent.some(text=>text.includes('ЧЁРНЫЙ ВЕСТНИК')));
- const swears=/(бляд|блят|хуй|нахуй|пиздец|ёбан|ебат|долбо)/i.test(stored.body);
+ const tone=analyzeRoastTone(stored.body,source);
+ const quality=assessRoastSignals(tone);
+ const swears=tone.editorialSwearCount>=3;
  const themes=[/кофемашин|инвестиц/i,/игор|опозд|такси|ключ/i,/паша|прицел|автонавед/i,/дим|чайник|погод/i]
    .filter(re=>re.test(stored.body)).length;
  const correctDay=stored.body.split('\n').slice(0,2).some(line=>line.includes('21.10.2026'));
@@ -145,27 +148,30 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const creditAssertion=/кредит/iu.test(stored.body) && !/Дим[а-яё]*.{0,150}кредит/isu.test(stored.body) &&
    !/по словам Димы/iu.test(stored.body);
  const financiallyGrounded=!creditAssertion;
- const check={ingested,aiCalls,themes,swears,correctDay,unknownName,financiallyGrounded,
+ const check={ingested,aiCalls,themes,swears,editorialSwears:tone.editorialSwearCount,distinctSwears:tone.editorialSwearRoots.length,templateJokes:tone.clichés.length,copiedLongJokes:tone.recycledLongLines.length,qualitySignalsPass:quality.pass,correctDay,unknownName,financiallyGrounded,
    length:stored.body.length,cited:evidence.cited,quotesVerified:evidence.quotesChecked};
  const report=[
-  '# Чёрный Вестник 0.2.2: реальный редакторский Groq smoke',
+  '# Чёрный Вестник: реальная проба токсичности и юмора',
   '',
   '30 полностью вымышленных сообщений; **Groq настоящий**, Telegram изолирован.',
   '',
   '## Механические результаты',
   ...Object.entries(check).map(([k,v])=>'- '+k+': '+v),
+  '- Mechanical editorial gate: '+(quality.pass?'PASS':'FAIL')+' '+quality.problems.join('; '),
+  '- Only **original editor profanity**, outside participant quotes, is counted.',
   '',
   '## Настоящий ответ',
   '~~~text',stored.body,'~~~',
   '',
-  '**Ограничение:** никакая проверка правильности ID или цитат не доказывает истинность всех пересказов и шуток. Требуется редакторский просмотр.',
+  '**Ограничение:** механическая проверка токсичности, мата и штампов НЕ доказывает, что шутки действительно смешные. Для редакторского PASS требуется отдельная независимая читательская оценка оригинальности, остроты и фактической точности.',
   ''
  ].join('\n');
  mkdirSync('reports',{recursive:true});
  writeFileSync('reports/editorial-live.md',report);
  log('EDITORIAL LIVE: '+JSON.stringify(check));
  log('GROQ REPORT:\n'+stored.body.slice(0,5500));
- if(!swears||themes<3||!correctDay||!unknownName||!financiallyGrounded)throw Error('Quality gate: unsupported credit claim, wrong name/date, or insufficient roast');
+ if(!swears||themes<3||!correctDay||!unknownName||!financiallyGrounded||!quality.pass)
+   throw Error('Roast gate FAIL: '+[...quality.problems,(!financiallyGrounded?'unsupported credit claim':null)].filter(Boolean).join('; '));
  return {report,check};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1]))
