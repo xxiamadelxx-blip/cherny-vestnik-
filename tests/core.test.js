@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {localClock,scheduledDue,normalizeMessage,selectTranscript,splitTelegramText,cleanText,safeAiOutput, fallbackDigest} from '../src/core.js';
+import {localClock,scheduledDue,normalizeMessage,packTranscript,splitTelegramText,cleanText,safeAiOutput, fallbackDigest} from '../src/core.js';
 import {buildPrompt,systemPrompt} from '../src/ai.js';
 
 test('Moscow timezone and quarter-hour schedule (incl. day rollover)', () => {
@@ -21,15 +21,18 @@ test('normalization rejects bots, forwards, private updates, commands and unsafe
   assert.equal(cleanText('a\u0000 b\n\tc'),'a b c');
 });
 
-test('sampling draws from entire day in chronological order and discloses sample size', () => {
-  const rows=Array.from({length:600}, (_,i) => ({message_id:i+1,display_name:'Федя',body:`Фраза ${i+1}`}));
-  const sample=selectTranscript(rows,10000,80);
-  assert.equal(sample.sampled,80);
-  assert.equal(sample.ids[0],1);
-  assert.equal(sample.ids.at(-1),600);
-  assert.match(sample.transcript,/\[#1\]/);
-  assert.match(sample.transcript,/\[#600\]/);
-  assert.ok(sample.transcript.length <= 10000);
+test('all 600 messages are packed in chronological non-overlapping batches', () => {
+  const rows=Array.from({length:600}, (_,i) => ({message_id:i+1,display_name:'Федя',body:'Фраза '+(i+1)}));
+  const seen=[];
+  for(let offset=0;offset<rows.length;){
+    const pack=packTranscript(rows.slice(offset,offset+40));
+    assert.ok(pack.count>0);
+    assert.ok(pack.transcript.length<=5400);
+    seen.push(...pack.ids);
+    offset+=pack.count;
+  }
+  assert.equal(seen.length,600);
+  assert.deepEqual(seen,Array.from({length:600},(_,i)=>i+1));
 });
 
 test('long Telegram text splits into intact <= limit sections and retains data', () => {
