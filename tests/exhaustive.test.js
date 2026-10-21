@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {handleUpdate,publishDigest,runCron} from '../src/index.js';
-import {packTranscript} from '../src/core.js';
+import {packTranscript,normalizeMessage} from '../src/core.js';
 
 const NOW=Date.UTC(2026,9,21,18,0);
 function fixture(total=1000) {
@@ -74,4 +74,11 @@ test('few very long messages also take complete batch pipeline rather than abort
   assert.equal(status,'sent');
   assert.equal(f.seenIds.size,20);
   assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,20);
+});
+
+test('all 4096 characters of a Telegram message survive ingestion and chunk packing',()=>{
+  const src='Г'.repeat(4095)+'!';
+  const msg=normalizeMessage({chat:{id:-1001111,type:'supergroup'},message_id:99,date:1000,from:{id:1,first_name:'Саня'},text:src});
+  assert.equal(msg.body.length,4096);
+  assert.ok(packTranscript([msg]).transcript.endsWith('!'));
 });
