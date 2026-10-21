@@ -16,6 +16,8 @@ jobs:
           node-version: '22'
       - name: Unit tests including 1000 message no-drop proof
         run: npm test
+      - name: Clear stale committed report from previous rehearsal
+        run: rm -f reports/simulation-1000.md reports/simulation-1000-run.md
       - name: Process 1000 synthetic messages through actual Groq
         run: node scripts/simulate-1000.mjs
       - name: Archive generated report
@@ -24,6 +26,7 @@ jobs:
         with:
           name: full-1000-groq-proof
           path: |
+            reports/simulation-1000-run.md
             reports/simulation-1000.md
             reports/simulation-1000-chat.json
           if-no-files-found: warn
