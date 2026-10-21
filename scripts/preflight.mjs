@@ -56,6 +56,9 @@ export async function preflight({ env = process.env, fetcher = fetch, log = cons
     if (!Array.isArray(models?.data) || !models.data.some(item => item.id === model)) {
       throw new Error(`model ${model} unavailable on this API key`);
     }
+    // Code deployments must not consume scarce free completion tokens.
+    // Manual preflight still exercises a real completion when this flag is absent.
+    if (env.PREFLIGHT_SKIP_COMPLETION === '1') return;
     const completion = await requestJson(fetcher,
       'https://api.groq.com/openai/v1/chat/completions', {
         method:'POST',
