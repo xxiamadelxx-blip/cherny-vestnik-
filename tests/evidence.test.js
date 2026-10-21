@@ -199,3 +199,19 @@ test('a real quote after its citation counts as checked, but editorial headline 
   assert.equal(verifyEditorialEvidence(newspaper,original).quotesChecked,1);
   assert.deepEqual(verifyEditorialEvidence('«Чайник-метеоролог» вообще звучит смешно.',original),{cited:0,quotesChecked:0});
 });
+
+test('rumor about a loan is not proof of another participant borrowing',()=>{
+ const source=[
+  {message_id:501,display_name:'Саня',body:'Заказал кофемашину. Это инвестиция в экономию.'},
+  {message_id:502,display_name:'Дима',body:'Саня купил экономию в кредит, ха-ха!'}
+ ];
+ assert.throws(()=>verifyEditorialEvidence('Саня купил экономию в кредит [#502].',source),
+  err=>err instanceof EvidenceValidationError&&/credit claim/.test(err.message));
+ assert.doesNotThrow(()=>verifyEditorialEvidence('По словам Димы, Саня якобы купил экономию в кредит [#502].',source));
+});
+test('first-person acknowledgment supports an attributed credit fact',()=>{
+ const source=[
+  {message_id:601,display_name:'Саня',body:'Я купил кофемашину в кредит, расплачиваться два года.'}
+ ];
+ assert.doesNotThrow(()=>verifyEditorialEvidence('Саня купил кофемашину в кредит [#601].',source));
+});
