@@ -116,6 +116,29 @@ function verifyQuotedSpeaker(text,match,sourceRows) {
     throw new EvidenceValidationError('verbatim quote falsely attributed to the wrong Telegram speaker');
 }
 
+// A sarcastic bystander's "bought it on credit" is not first-hand proof.
+// Block categorical statements about someone's loan unless that participant
+// confirms credit/instalments themselves in a cited message. Reported jokes
+// explicitly introduced as another speaker's opinion remain permissible.
+export function verifyUnprovenLoanClaims(body,sourceRows) {
+  const stripped=String(body||'').replace(/[«“"][^»”"\n]{0,800}[»”"]/gu,' ');
+  const firstHand=sourceRows.filter(row=>{
+    const raw=String(row.body||'');
+    return /(?:в\s+кредит|кредит[ауеом]?|рассрочк[ауие])/iu.test(raw) &&
+      /(?<![\p{L}])я(?![\p{L}])|(?:купил|купила|взял|взяла|оформил|оформила)/iu.test(raw);
+  });
+  for(const sentence of stripped.split(/[.!?\n]+/u)) {
+    if(!/(?:купил[аи]?|взял[аи]?|оформил[аи]?|приобр[её]л[аи]?|покупал[аи]?)[^.!?\n]{0,85}(?:в\s+кредит|в\s+рассрочку)/iu.test(sentence))
+      continue;
+    if(/(?:по\s+словам|якобы|по\s+мнению|пошутил[аи]?|шутит|предположил[аи]?|в\s+шутку)/iu.test(sentence))
+      continue;
+    const named=sentence.match(/(?<![\p{L}])([\p{Lu}][\p{Ll}]{2,22})\s+(?:[^.!?\n]{0,40})?(?:купил[аи]?|взял[аи]?|оформил[аи]?|приобр[её]л[аи]?|покупал[аи]?)/u);
+    const credible=firstHand.some(row=>!named || speakerKey(row.display_name)===speakerKey(named[1]));
+    if(!credible)throw new EvidenceValidationError('unsupported categorical credit claim from third-party joke');
+  }
+  return true;
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
@@ -153,6 +176,7 @@ export function verifyEditorialEvidence(body, sourceRows) {
   }
   verifyNarratedQuoteAttribution(text,sourceRows);
   verifyNoFabricatedScenes(text,sourceRows);
+  verifyUnprovenLoanClaims(text,sourceRows);
   return {cited:refs.length,quotesChecked:checked};
 }
 export async function fetchCitedMessages({db,chatId,body}) {
