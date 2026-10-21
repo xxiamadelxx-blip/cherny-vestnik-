@@ -4,6 +4,7 @@ import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {handleUpdate, publishDigest} from '../src/index.js';
+import {rehearsalDelayMs} from './rehearsal-pacing.mjs';
 
 
 const CHAT_ID='-1009300300'; // Fictional chat, all Telegram sends are mocked.
@@ -211,16 +212,23 @@ export async function simulate({groqKey=process.env.GROQ_API_KEY, liveFetch=fetc
   const saved=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
   assert.equal(saved,300);
   let outcome='processing',steps=0;
-  while(outcome==='processing') {
-    if(steps>0)await new Promise(resolve=>setTimeout(resolve,31000));
+  while(outcome==='processing'||outcome==='waiting') {
+    if(steps>0) {
+      const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
+      const delay=rehearsalDelayMs(outcome,budget);
+      log('Rehearsal '+outcome+': pause '+Math.ceil(delay/1000)+' sec (no messages discarded)');
+      await new Promise(resolve=>setTimeout(resolve,delay));
+    }
     try {outcome=await publishDigest(env,CHAT_ID,NOW,isolated);}
     catch(err) {
-      // Free Groq TPM/ RPM reset; resume persisted chunks on next iteration.
-      if(!/Groq HTTP 429/.test(String(err)))throw err;
+      if(!/Groq response empty or truncated/.test(String(err)))throw err;
+      // Truncation is not success; one more Cron-style attempt may produce a
+      // complete reply while source chunks remain checkpointed.
       outcome='processing';
     }
-    if(++steps>18)throw Error('Real Groq simulation exhausted retries');
+    if(++steps>36)throw Error('Real Groq simulation exhausted attempts without a full report');
   }
+  assert.equal(outcome,'sent','Never classify a partial report as a successful 300-message simulation');
   const processed=sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n;
   const allIds=new Set(sqlite.prepare('SELECT ids_json FROM digest_chunks').all().flatMap(r=>JSON.parse(r.ids_json)));
   assert.equal(processed,300);
