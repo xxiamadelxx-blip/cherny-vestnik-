@@ -43,3 +43,14 @@ test('Preflight rejects Cloudflare Workers missing subdomain',async()=>{
   const bad = async (url,init) => url.includes('/workers/subdomain') ? successResponse({success:true,result:{}}) : fn(url,init);
   await assert.rejects(preflight({env,fetcher:bad,log:()=>{}}),/subdomain not configured/);
 });
+
+
+test('automatic deployment checks model without spending completion tokens',async()=>{
+  const {fn,calls}=mockFetch();
+  const output=[];
+  const result=await preflight({env:{...env,PREFLIGHT_SKIP_COMPLETION:'1'},fetcher:fn,log:x=>output.push(x)});
+  assert.equal(result.checks.length,4);
+  assert.equal(calls.length,4);
+  assert(calls.every(c=>!c.url.endsWith('/chat/completions')));
+  assert(output.some(x=>x.includes('Completion intentionally skipped')));
+});
