@@ -285,3 +285,27 @@ test('429 during quote correction reuses saved draft and completes after provide
  assert.equal(f.groqCalls,3,'one initial draft and two repair calls, no regeneration of initial draft');
  assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
 });
+
+
+test('two rejected factual rewrites halt free token spending and admin /retry can recover',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ await handleUpdate(f.makeMsg({id:101,text:'Я купил картошку на ужин'}),f.env,f.fetcher,NOW-300000);
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася: «Я ограбил банк» [#101]. Полный ёбаный цирк.');
+ await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/Editorial verification rejected/);
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
+ const second=await publishDigest(f.env,'-1001111',NOW+15*60_000+1,f.fetcher);
+ assert.equal(second,'needs_review');
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'needs_review');
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,2);
+ const spent=f.groqCalls;
+ assert.equal(await publishDigest(f.env,'-1001111',NOW+3600000,f.fetcher),'needs_review');
+ assert.equal(f.groqCalls,spent,'blocked state does not consume another model call');
+ assert.ok(!f.sent.some(m=>m.text.includes('ЧЁРНЫЙ ВЕСТНИК')));
+ await handleUpdate(f.makeMsg({id:151,from:1,text:'/retry'}),f.env,f.fetcher,NOW+3600000);
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,0);
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася купил картошку [#101] и устроил ёбаный праздник экономии.');
+ assert.equal(await publishDigest(f.env,'-1001111',NOW+3601000,f.fetcher),'sent');
+ assert.equal(f.groqCalls,spent+1);
+});
