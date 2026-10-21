@@ -1,4 +1,5 @@
 import {safeAiOutput, packTranscript} from './core.js';
+import {requireGroqAllowance,noteGroqSuccess,noteGroqLimit,GroqDeferredError} from './quota.js';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'qwen/qwen3.8-27b';
@@ -13,6 +14,7 @@ export function systemPrompt() {
 }
 
 async function groq(env, messages, fetcher, tokens=1100, temperature=0.6) {
+  await requireGroqAllowance(env);
   const res = await fetcher(GROQ_ENDPOINT, {
     method:'POST',
     headers:{Authorization:`Bearer ${env.GROQ_API_KEY}`,'Content-Type':'application/json'},
@@ -20,8 +22,13 @@ async function groq(env, messages, fetcher, tokens=1100, temperature=0.6) {
       max_completion_tokens:tokens,reasoning_effort:'none'}),
     signal:AbortSignal.timeout(45000)
   });
+  if (res.status===429) {
+    const next=await noteGroqLimit(env,res);
+    throw new GroqDeferredError(next,'Groq HTTP 429');
+  }
   if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
   const data=await res.json();
+  await noteGroqSuccess(env,res,data?.usage);
   const content=String(data?.choices?.[0]?.message?.content||'').trim();
   if (!content || data?.choices?.[0]?.finish_reason==='length') throw new Error('Groq response empty or truncated');
   return content;
