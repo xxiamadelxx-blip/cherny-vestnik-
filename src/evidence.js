@@ -25,9 +25,9 @@ const EXTERNAL_ACTORS=[
 ];
 const ACTOR_ACTION=/(?:бь[её]т|бил|ударил|прибежал|приш[её]л|уволил|позвонил|потребовал|разбил|слил|вызвал|заплатил|орал|кричал|отобрал|вытащил|украл|встретил|отправил|набросился)/iu;
 const SERIOUS_UNSOURCED=[
-  {term:/\bпропил\b/iu,source:/пропил|алкогол|выпил|пья|водк|пив[а-яё]*/iu,reason:'invented drinking allegation'},
+  {term:/(?<![\p{L}])пропил(?![\p{L}])/iu,source:/пропил|алкогол|выпил|пья|водк|пив[а-яё]*/iu,reason:'invented drinking allegation'},
   {term:/стиральн[а-яё]*\s+машин[а-яё]*/iu,source:/стиральн[а-яё]*/iu,reason:'invented washing-machine incident'},
-  {term:/\bарестовал[а-яё]*/iu,source:/арест|задержал|полиц/u,reason:'invented arrest'}
+  {term:/(?<![\p{L}])арестовал[а-яё]*(?![\p{L}])/iu,source:/арест|задержал|полиц/u,reason:'invented arrest'}
 ];
 export function verifyNoFabricatedScenes(body,sourceRows){
   const source=sourceRows.map(r=>String(r.body||'')).join('\n').toLocaleLowerCase('ru-RU');
