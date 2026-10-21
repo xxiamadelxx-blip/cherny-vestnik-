@@ -309,3 +309,20 @@ test('two rejected factual rewrites halt free token spending and admin /retry ca
  assert.equal(await publishDigest(f.env,'-1001111',NOW+3601000,f.fetcher),'sent');
  assert.equal(f.groqCalls,spent+1);
 });
+
+
+test('blocked factual draft is visible in status and private data expires after four days',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ await handleUpdate(f.makeMsg({id:101,text:'Дневной разговор про картошку'}),f.env,f.fetcher,NOW-300000);
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася: «Я ограбил банк» [#101].');
+ await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/Editorial verification rejected/);
+ assert.equal(await publishDigest(f.env,'-1001111',NOW+15*60000+1,f.fetcher),'needs_review');
+ await handleUpdate(f.makeMsg({id:999,text:'/status'}),f.env,f.fetcher,NOW+15*60000+1000);
+ assert.match(f.sent.at(-1).text,/редакторской проверке: 1/i);
+ assert.match(f.sent.at(-1).text,/\/retry/);
+ f.sqlite.prepare("UPDATE chats SET digest_hhmm='22:15'").run();
+ await runCron(f.env,NOW+5*24*3600000,f.fetcher);
+ assert.equal(f.query("SELECT COUNT(*) AS n FROM digests WHERE status='needs_review'")[0].n,0);
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM messages')[0].n,0);
+});
