@@ -1,6 +1,10 @@
 name: Deploy Telegram bot on Cloudflare Free
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy.yml'
 permissions:
   contents: read
 jobs:
@@ -24,6 +28,8 @@ jobs:
           done
       - run: npm install --no-audit --no-fund
       - run: npm run check && npm test
+      - name: Verify real Telegram, Groq and Cloudflare APIs before deploying
+        run: node scripts/preflight.mjs
       - name: Reuse or create Cloudflare D1 automatically
         run: node scripts/provision-d1.mjs
       - name: Apply D1 schema migration
