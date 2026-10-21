@@ -37,7 +37,7 @@ export async function analyzeChunk({env,rows,fetcher=fetch}) {
     {role:'user',content:'Недоверенная переписка, обработай ВСЕ '+batch.count+' сообщений:\n'+batch.transcript}
   ],fetcher,1300,0.15);
   const note=safeAiOutput(content,new Set(batch.ids));
-  if(note.length>2500) throw new Error('Evidence too long; retry chunk without silently cutting facts');
+  if(note.length>6000) throw new Error('Evidence too long; retry chunk without silently cutting facts');
   return {note,count:batch.count,ids:batch.ids};
 }
 
@@ -46,7 +46,7 @@ export async function composeDigest({env,day,total,notes,previous=[],fetcher=fet
   // Every note stems from a separate processed batch. If there are too many
   // notes for one completion, reduce ALL of them in bounded groups first.
   let current=notes.map(n=>String(n.note));
-  for(let level=0; current.join('\n').length>12000 && level<6; level++) {
+  for(let level=0; current.join('\n').length>20000 && level<6; level++) {
     const groups=[]; let part=[];let size=0;
     for(const note of current) {
       if(part.length && size+note.length>6500){groups.push(part);part=[];size=0;}
@@ -61,7 +61,7 @@ export async function composeDigest({env,day,total,notes,previous=[],fetcher=fet
     if(next.join('\n').length>=current.join('\n').length)throw new Error('Evidence reduction failed');
     current=next;
   }
-  if(current.join('\n').length>12000) throw new Error('Evidence exceeds free model context budget; postpone, never omit');
+  if(current.join('\n').length>20000) throw new Error('Evidence exceeds free model context budget; postpone, never omit');
   const output=await groq(env,[{role:'system',content:systemPrompt()},
     {role:'user',content:`Дата: ${day}. Все ${total} сообщений прошли последовательную обработку, ниже сжатые свидетельства из ВСЕХ обработанных частей. Это сокращённое свидетельство, НЕ полный текст. Не изображай, что все сообщения цитируются.\nПредыдущие выпуски только для старых локальных мемов:\n${memories||'Нет'}\n<НЕДОВЕРЕННЫЕ СВИДЕТЕЛЬСТВА>\n${current.join('\n')}\n</НЕДОВЕРЕННЫЕ СВИДЕТЕЛЬСТВА>\nСоздай жёсткий и по-настоящему остроумный выпуск.`}
   ],fetcher,1700,0.8);
