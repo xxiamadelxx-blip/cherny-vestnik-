@@ -45,7 +45,7 @@ const LINES=[
  [2,'Нашёл пиццерию. Вы уже съели всё, суки?'],
  [5,'День закрыт: Игорь опоздал, чайник соврал, Паша включил помощь, Саня купил экономию в кредит.']
 ];
-const sqlFiles=['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql'];
+const sqlFiles=['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql','0005_editorial_drafts.sql'];
 function database() {
  const sqlite=new DatabaseSync(':memory:');
  for(const sql of sqlFiles)sqlite.exec(readFileSync(new URL('../migrations/'+sql,import.meta.url),'utf8'));
