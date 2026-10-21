@@ -2,10 +2,6 @@ name: Focused Real Groq Editorial Acceptance
 # Third live editorial verification with affirmative punchline style.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/editorial-live.yml'
 permissions:
   contents: read
 jobs:
@@ -14,7 +10,6 @@ jobs:
     timeout-minutes: 8
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      EDITORIAL_TEST_MODEL: openai/gpt-oss-120b
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
