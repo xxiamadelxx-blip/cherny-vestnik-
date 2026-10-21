@@ -20,6 +20,8 @@ jobs:
           node-version: '22'
       - name: Syntax check and unit tests
         run: npm run check && npm test
+      - name: Remove old committed output so only this run's report can pass
+        run: rm -f reports/simulation-300.md reports/simulation-300-run.md
       - name: Run production bot logic with 300 synthetic messages and REAL Groq (no Telegram delivery)
         run: node scripts/simulate-300.mjs
       - name: Save generated report and chat transcript
@@ -28,6 +30,7 @@ jobs:
         with:
           name: real-groq-300-message-report
           path: |
+            reports/simulation-300-run.md
             reports/simulation-300.md
             reports/simulation-300-chat.json
           if-no-files-found: warn
