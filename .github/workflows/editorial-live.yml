@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# One-shot regression: verify true narrator of every cited quotation; reject unsourced scenes.
+# One-shot Groq regression after Unicode-aware quote-speaker verification and 88 green tests.
 on:
   workflow_dispatch:
   push:
