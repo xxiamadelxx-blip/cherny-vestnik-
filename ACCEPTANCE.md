@@ -153,3 +153,14 @@ The v0.2.1 changes do not add paid APIs or automatically upgrade any account tie
 - **PASS**: updated AI rehearsal scripts record current-run PASS, FAIL or DEFERRED plus actually analyzed source counts; CI removes stale checked-in success report before each attempt.
 - **PASS**: after two failed fact-check rewrites the digest enters needs_review, stopping unlimited free-token consumption; admin /retry can resume. The status is visible and blocked source data has a 4-day retention cap.
 - **NOT YET ACCEPTED**: complete semantic factuality for arbitrary paraphrases, real opted-in Telegram group delivery, next-day Cron delivery, and a new successful fully audited real 300/1000-message rehearsal.
+
+## Final editorial roast gate, 22 October 2026
+
+**RESULT: FAIL.** Do not declare the satirical MVP finished solely from technical tests.
+- [Real Qwen trial 1](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39694346082): 3 independent swear words, 4 stock jokes, false credit attribution; editorial FAIL.
+- [Real Qwen trial 2](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39694842657): 3 independent swears and 4 stock jokes; editorial FAIL.
+- [Real Qwen trial 3](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39695180117): after three real completions, an unverified verbatim quote caused editorial rejection; editorial FAIL, no real group delivery.
+- [Real GPT-OSS comparator](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39695664036): lacked editor-authored adult profanity, weak humor; editorial FAIL. Not enabled in production.
+- Independent audit and acceptance criteria: [reports/editorial-quality-audit.md](reports/editorial-quality-audit.md).
+- The enhanced mechanical tone rubric in `src/roast-quality.js` is a guardrail, not proof that a joke is funny. Human taste and accurate factual reading remain a release gate.
+- Telegram real test group publication is still NOT RUN. No marketing claim of a finished MVP until quality and end-to-end evidence both exist.
