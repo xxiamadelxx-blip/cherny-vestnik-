@@ -15,6 +15,43 @@ export function citedMessageIds(body) {
 function normalized(value) {
   return String(value ?? '').normalize('NFKC').replace(/\s+/g,' ').trim().toLocaleLowerCase('ru-RU');
 }
+
+// Conservative semantic floor: reject asserted extra characters or serious
+// events that were not mentioned by ANY of the cited originals. Metaphors
+// ("как сантехник") remain allowed; this is not full semantic verification.
+const EXTERNAL_ACTORS=[
+  /сантехник/u,/охранник/u,/барист/u,/кассир/u,/курьер/u,/полицейск/u,
+  /электрик/u,/пожарн/u,/таксист/u,/слесар/u,/врач(?:а|и|ом|у|ей)?/u
+];
+const ACTOR_ACTION=/(?:бь[её]т|бил|ударил|прибежал|приш[её]л|уволил|позвонил|потребовал|разбил|слил|вызвал|заплатил|орал|кричал|отобрал|вытащил|украл|встретил|отправил|набросился)/iu;
+const SERIOUS_UNSOURCED=[
+  {term:/\bпропил\b/iu,source:/пропил|алкогол|выпил|пья|водк|пив[а-яё]*/iu,reason:'invented drinking allegation'},
+  {term:/стиральн[а-яё]*\s+машин[а-яё]*/iu,source:/стиральн[а-яё]*/iu,reason:'invented washing-machine incident'},
+  {term:/\bарестовал[а-яё]*/iu,source:/арест|задержал|полиц/u,reason:'invented arrest'}
+];
+export function verifyNoFabricatedScenes(body,sourceRows){
+  const source=sourceRows.map(r=>String(r.body||'')).join('\n').toLocaleLowerCase('ru-RU');
+  const output=String(body||'').toLocaleLowerCase('ru-RU');
+  // Explicit first-hand factual events, not harmless humorous comparisons.
+  for(const condition of SERIOUS_UNSOURCED) {
+    if(condition.term.test(output)&&!condition.source.test(source))
+      throw new EvidenceValidationError(condition.reason);
+  }
+  for(const piece of output.split(/[.!?\n]+/u)) {
+    if(!ACTOR_ACTION.test(piece))continue;
+    if(/(?:как|словно|будто|представь|вообрази)\s+[^.!?\n]{0,25}$/u.test(piece))continue;
+    for(const role of EXTERNAL_ACTORS){
+      if(!role.test(piece)||role.test(source))continue;
+      // "Как сантехник..." is clearly a comparison, not a real bystander.
+      const matched=piece.match(role);
+      const prior=piece.slice(Math.max(0,matched.index-26),matched.index);
+      if(/(?:как|словно|будто|словно бы)\s*$/u.test(prior))continue;
+      throw new EvidenceValidationError('unsourced third-party actor with factual action');
+    }
+  }
+  return true;
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
@@ -39,6 +76,7 @@ export function verifyEditorialEvidence(body, sourceRows) {
     if(!row||!normalized(row.body).includes(normalized(match[1])))
       throw new EvidenceValidationError('verbatim quote does not match the cited message');
   }
+  verifyNoFabricatedScenes(text,sourceRows);
   return {cited:refs.length,quotesChecked:checked};
 }
 export async function fetchCitedMessages({db,chatId,body}) {
