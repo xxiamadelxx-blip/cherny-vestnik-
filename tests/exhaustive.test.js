@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {handleUpdate,publishDigest,runCron} from '../src/index.js';
 import {packTranscript,normalizeMessage} from '../src/core.js';
+import {analyzeChunk} from '../src/ai.js';
 
 const NOW=Date.UTC(2026,9,21,18,0);
 function fixture(total=1000) {
@@ -106,4 +107,18 @@ test('cron preserves source messages older than four days while their digest is 
   assert.equal(result[0].result,'sent');
   assert.equal(f.query('SELECT COUNT(*) AS n FROM messages')[0].n,100);
   assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,100);
+});
+
+test('long model evidence is retained in full, not silently sliced',async()=>{
+ const note='[#1001] Саня: '+('важное противоречие; '.repeat(70));
+ assert.ok(note.length>900);
+ const rows=[{message_id:1001,display_name:'Саня',body:'Сначала согласился, потом отказался'}];
+ const fetcher=async(_url,options)=>{
+   assert.match(JSON.parse(options.body).messages[1].content,/\[#1001\]/);
+   return Response.json({choices:[{message:{content:note},finish_reason:'stop'}]});
+ };
+ const result=await analyzeChunk({env:{GROQ_API_KEY:'fake'},rows,fetcher});
+ assert.equal(result.note,note);
+ assert.equal(result.count,1);
+ assert.deepEqual(result.ids,[1001]);
 });
