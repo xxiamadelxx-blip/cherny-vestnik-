@@ -171,6 +171,7 @@ function database(){
   sqlite.exec(readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0002_exhaustive.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0003_groq_budget.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0004_digest_reductions.sql',import.meta.url),'utf8'));
   return {sqlite,DB:{prepare(sql){const stmt=sqlite.prepare(sql);return {bind(...args){return {
     first:async()=>stmt.get(...args)||null,
     all:async()=>({results:stmt.all(...args)}),
