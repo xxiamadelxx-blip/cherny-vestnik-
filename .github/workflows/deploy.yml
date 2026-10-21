@@ -33,7 +33,7 @@ jobs:
       - name: Reuse or create Cloudflare D1 automatically
         run: node scripts/provision-d1.mjs
       - name: Apply D1 schema migration
-        run: npx wrangler d1 migrations apply cherny-vestnik --remote --yes
+        run: npx wrangler d1 migrations apply cherny-vestnik --remote
       - name: Deploy Worker and 15-minute Cron
         run: npx wrangler deploy
       - name: Upload secrets and register Telegram webhook
