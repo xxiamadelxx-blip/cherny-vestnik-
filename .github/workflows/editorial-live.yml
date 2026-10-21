@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# Live editorial verification after quality rubric changes.
+# Second live editorial verification after factual attribution and originality fixes.
 on:
   workflow_dispatch:
   push:
