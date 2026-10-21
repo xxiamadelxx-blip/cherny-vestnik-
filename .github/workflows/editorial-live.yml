@@ -1,0 +1,31 @@
+name: Focused Real Groq Editorial Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/editorial-live.yml'
+permissions:
+  contents: read
+jobs:
+  editorial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests and syntax
+        run: npm run check && npm test
+      - name: Real Groq editorial generation on 30 fictional chat messages
+        run: node scripts/editorial-live.mjs
+      - name: Preserve independent editorial acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: groq-editorial-real-30
+          path: reports/editorial-live.md
+          if-no-files-found: warn
