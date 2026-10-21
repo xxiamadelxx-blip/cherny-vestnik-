@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
 import {handleUpdate,publishDigest} from '../src/index.js';
 import {generate300} from './simulate-300.mjs';
+import {rehearsalDelayMs} from './rehearsal-pacing.mjs';
 
 const CHAT='-1009300300'; // Fictional, Telegram transport deliberately mocked.
 const NOW=Date.UTC(2026,9,21,18,15);
@@ -47,14 +48,24 @@ export async function run1000({key=process.env.GROQ_API_KEY,fetcher=fetch,log=co
  for(const m of data)await handleUpdate(update(m),env,isolated,m.timestamp);
  assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n,1000);
  let outcome='processing',attempts=0;
- while(outcome==='processing'){
-   if(attempts) await new Promise(done=>setTimeout(done,31000));
+ while(outcome==='processing'||outcome==='waiting'){
+   if(attempts){
+     const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
+     const delay=rehearsalDelayMs(outcome,budget);
+     log('Rehearsal '+outcome+': pause '+Math.ceil(delay/1000)+' sec');
+     await new Promise(done=>setTimeout(done,delay));
+   }
    try{outcome=await publishDigest(env,CHAT,NOW,isolated);}
-   catch(err){if(!/Groq HTTP 429|Groq response empty or truncated/.test(String(err)))throw err;outcome='processing';log('Batch retry: '+String(err.message).slice(0,60));}
+   catch(err){
+     if(!/Groq response empty or truncated/.test(String(err)))throw err;
+     outcome='processing';
+     log('Unfinished Groq output; retry without reprocessing saved packets');
+   }
    attempts++;
    log('Progress: '+sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n+'/1000 after '+attempts+' attempts');
-   if(attempts>42)throw Error('Groq daily free limit or throughput prevented completion');
+   if(attempts>52)throw Error('Groq quota or throughput prevented a fully completed 1000-message rehearsal');
  }
+ assert.equal(outcome,'sent','Partial or waiting digest is not accepted');
  const chunks=sqlite.prepare('SELECT * FROM digest_chunks ORDER BY chunk_no').all();
  const seen=new Set(chunks.flatMap(x=>JSON.parse(x.ids_json)));
  const processed=chunks.reduce((a,x)=>a+x.processed,0);
