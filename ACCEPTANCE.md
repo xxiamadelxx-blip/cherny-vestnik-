@@ -123,3 +123,11 @@ No claim of unlimited free throughput: long messages and Groq RPM/TPM/TPD quotas
 - **NOT YET ACCEPTED**: a fresh large real-Groq editorial rehearsal after the quota changes, content accuracy review, and Telegram-group end-to-end delivery. Automated quota tests do not prove daily newspaper quality.
 
 The v0.2.1 changes do not add paid APIs or automatically upgrade any account tier.
+
+## v0.2.2 Telegram polling fencing hardening (2026-10-21)
+
+- **PASS**: 73/73 automated tests, including three dedicated SQLite-backed polling lease tests: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39660585369
+- **PASS**: simulated handler crash after first Telegram update; cursor retains the first update and retries the second after restart.
+- **PASS**: simulated overlapping Cron invocation after lease expiry; old invocation cannot release the newer lease or roll the cursor backwards.
+- **PASS**: second Cron does not start Telegram API request while active lease exists.
+- **PENDING**: prove delivery in a real opted-in Telegram test group and inspect an actual group digest. This cannot be claimed from mocked SQLite tests alone.
