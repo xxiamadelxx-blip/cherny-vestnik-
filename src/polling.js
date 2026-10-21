@@ -41,15 +41,21 @@ export async function pollTelegram(env,{now=Date.now(),fetcher=fetch,handleUpdat
      // Persist the message and command effects BEFORE acknowledging that ID.
      // Replays after crashes remain at-least-once; message storage deduplicates.
      await handleUpdate(update,env,fetcher,now);
-     await execute(db,'UPDATE telegram_poller SET last_update_id=?,updated_at=? WHERE name=?',
-       id,now,PRIMARY);
+     // Fencing: an expired invocation must not overwrite a newer poller's
+     // cursor. Monotonic updates prevent offset regression on overlapping Cron.
+     const checkpoint=await execute(db,`UPDATE telegram_poller
+       SET last_update_id=?,updated_at=? WHERE name=? AND lease_until=? AND last_update_id<?`,
+       id,now,PRIMARY,lease,id);
+     if(!checkpoint.meta?.changes)
+       throw Error('Telegram polling lease lost before checkpoint; retry unacknowledged update');
      cursor=id;
      processed++;
    }
    return {status:'ok',received,processed,last_update_id:cursor};
  }finally{
    // Never lose messages due to an expired lease or unhandled exception.
-   await execute(db,'UPDATE telegram_poller SET lease_until=0,updated_at=? WHERE name=?',
-     now,PRIMARY);
+   // Never release another invocation's lease after ours has expired.
+   await execute(db,'UPDATE telegram_poller SET lease_until=0,updated_at=? WHERE name=? AND lease_until=?',
+     now,PRIMARY,lease);
  }
 }
