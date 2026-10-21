@@ -49,8 +49,19 @@ export async function composeDigest({env,day,total,notes,previous=[],fetcher=fet
   for(let level=0; current.join('\n').length>8500 && level<8; level++) {
     const groups=[]; let part=[];let size=0;
     for(const note of current) {
-      if(part.length && size+note.length>3600){groups.push(part);part=[];size=0;}
-      part.push(note);size+=note.length+1;
+      let rest=note;
+      while(rest.length) {
+        let take=Math.min(rest.length,3200);
+        if(rest.length>3200) {
+          const boundary=rest.lastIndexOf('\n',3200);
+          if(boundary>1200) take=boundary+1;
+        }
+        const piece=rest.slice(0,take);
+        rest=rest.slice(take);
+        if(part.length && size+piece.length+1>3600){groups.push(part);part=[];size=0;}
+        part.push(piece);
+        size+=piece.length+1;
+      }
     }
     if(part.length)groups.push(part);
     const next=[];
