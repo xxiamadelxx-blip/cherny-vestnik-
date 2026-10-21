@@ -108,3 +108,18 @@ No claim of unlimited free throughput: long messages and Groq RPM/TPM/TPD quotas
 - **FAIL**, latest live editorial run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39622296828 (free Groq rate-limit retries exhausted).
 - **Editorial release gate remains NOT ACCEPTED** until the stronger style and factual attributions pass a fresh real-Groq rehearsal when quota is available.
 - These test-run FAILs do not reverse the **previous successful real 1000/1000 coverage** result, but they do mean there is **no successful latest editorial sample**. Never label all quality gates PASS.
+
+## v0.2.1 Free Groq quota-aware production controls (2026-10-21)
+
+- **PASS**: 46/46 deterministic tests at https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39629817895
+- **PASS**: Cloudflare production deploy, D1 schema, Worker and Telegram webhook registration at https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39629767668 . See the later deploy run for the 0.2.1 version badge.
+- `migrations/0003_groq_budget.sql`: organization-scoped durable retry time, 429 backoff, Groq minute-token / daily-request header snapshots, UTC local token estimate. Only quota metadata saved, never secrets or conversations.
+- **PASS**: 429 mid-stream stores the provider's `retry-after`, refuses subsequent calls until reset, preserves previously processed evidence, resumes from next unprocessed message IDs. No partial report is published.
+- **PASS**: `migrations/0004_digest_reductions.sql` stores hashed intermediate reductions, so a quota pause at an advanced summary stage does not force the previously completed summaries to be generated again.
+- **PASS**: `/status` shows next permitted Groq attempt in Moscow local time, local daily token total, and count of fully analyzed messages.
+- **PASS**: `/wipe` and permission changes erase private per-chat cached reductions; completed reductions and all messages have bounded retention.
+- **PASS**: CI/deploy checks do not spend completion tokens; expensive real 300/1000 message rehearsals require manual dispatch. Preflight manual action still offers full live completion verification.
+- Default conservative soft cap: 180000 measured usage tokens per UTC day, threshold 3500 available minute tokens. Organization-wide usage from other apps is invisible to this application's counter; Groq 429 and reset headers remain authoritative.
+- **NOT YET ACCEPTED**: a fresh large real-Groq editorial rehearsal after the quota changes, content accuracy review, and Telegram-group end-to-end delivery. Automated quota tests do not prove daily newspaper quality.
+
+The v0.2.1 changes do not add paid APIs or automatically upgrade any account tier.
