@@ -9,6 +9,14 @@ import {selectTranscript} from '../src/core.js';
 const CHAT='-1009300300'; // Invented id, Telegram transport is always mocked.
 const NOW=Date.UTC(2026,9,21,18,15);
 const NAMES=['Саня','Марта','Игорь','Лиза','Дима','Катя','Паша','Женя'];
+const SPEAKERS=[
+ [0,1,4,0,0,1,5,6,5,3,7,4,0,2,1,0,3,0,7,0],
+ [5,4,6,1,6,7,3,5,0,7,6,1,3,4,0,7,6,1,3,7],
+ [3,0,1,0,5,0,7,6,3,4,2,1,7,4,2,5,0,3,2,1],
+ [1,2,3,2,6,2,7,2,4,2,5,2,1,2,0,3,2,2,1,3],
+ [7,3,4,1,4,5,4,0,6,4,2,7,4,7,5,3,0,1,4,6],
+ [1,6,3,0,4,5,7,6,3,6,0,1,7,4,2,0,5,2,3,7]
+];
 const SCENES=[
 ['Кофейная катастрофа',[
 'Я нашёл кофемашину за сорок тысяч, это инвестиция!',
@@ -147,7 +155,7 @@ const SCENES=[
 export function generate300(){
  const result=[], endings=['',' И я всё ещё об этом думаю.',' Вторая попытка объяснить.'];
  for(let scene=0;scene<6;scene++)for(let i=0;i<50;i++){
-   const index=scene*50+i, who=(index+Math.floor(index/20))%8;
+   const index=scene*50+i, who=SPEAKERS[scene][i%20];
    result.push({id:1001+index,scene:SCENES[scene][0],user_id:11+who,
      display_name:NAMES[who],body:SCENES[scene][1][i%20]+endings[Math.floor(i/20)],
      timestamp:Date.UTC(2026,9,21,6)+index*140000});
