@@ -4,7 +4,7 @@ import {
 } from './core.js';
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
-import {pollTelegram,pollBatchSize} from './polling.js';
+import {pollTelegram,pollPageBudget} from './polling.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,EvidenceValidationError} from './evidence.js';
 
@@ -274,16 +274,22 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
   // Telegram cannot consistently resolve workers.dev. Pull mode avoids that
   // dependency and safely checkpoints message IDs before issuing next offset.
   if(env.TELEGRAM_TRANSPORT==='polling'){
-    let poll;
-    try {poll=await pollTelegram(env,{now,fetcher,handleUpdate});}
-    catch(err){
-      console.warn('Telegram polling transient error: '+String(err).slice(0,135));
-      return []; // Do not publish a newspaper from a potentially incomplete chat.
+    let drained=false;
+    // Consume a bounded number of pages before choosing the newspaper window.
+    // A SHORT page is NOT proof of an empty Telegram queue; request once more
+    // until Telegram returns exactly zero updates. A busy backlog resumes on
+    // the next Cron tick without losing any earlier messages.
+    for(let page=0;page<pollPageBudget(env);page++){
+      let poll;
+      try {poll=await pollTelegram(env,{now,fetcher,handleUpdate});}
+      catch(err){
+        console.warn('Telegram polling transient error: '+String(err).slice(0,135));
+        return []; // Never publish if getUpdates may have missed messages.
+      }
+      if(poll.status!=='ok')return []; // Another worker holds the poller lease.
+      if(poll.received===0){drained=true;break;}
     }
-    // A full page proves only that this page was consumed, not that Telegram
-    // has no further queued messages. Wait for the first short/empty page.
-    // An overlapping poller holding the lease is also not an all-clear.
-    if(poll.status!=='ok' || poll.received>=pollBatchSize(env))return [];
+    if(!drained)return []; // Wait for a confirmed empty Telegram response.
   }
   // Retain at most four days of raw text and two weeks of previous-joke excerpts.
   await run(env.DB,`DELETE FROM messages WHERE posted_at<? AND NOT EXISTS (
