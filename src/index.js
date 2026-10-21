@@ -93,7 +93,6 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       await run(env.DB, 'DELETE FROM digests WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM memories WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
-      await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM optouts WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM chats WHERE chat_id=?', chatId);
       await send(env, chatId, '🧹 Архив группы и настройки полностью удалены. Бот выключен. Для повторного включения: /enable.', fetcher);
@@ -211,7 +210,12 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
 
 export async function runCron(env, now = Date.now(), fetcher = fetch) {
   // Retain at most four days of raw text and two weeks of previous-joke excerpts.
-  await run(env.DB,'DELETE FROM messages WHERE posted_at<?',now-MESSAGE_RETENTION_MS);
+  await run(env.DB,`DELETE FROM messages WHERE posted_at<? AND NOT EXISTS (
+    SELECT 1 FROM digests d WHERE d.chat_id=messages.chat_id
+      AND d.status!='sent' AND d.window_start IS NOT NULL
+      AND d.window_end IS NOT NULL
+      AND messages.posted_at>=d.window_start AND messages.posted_at<d.window_end
+  )`,now-MESSAGE_RETENTION_MS);
   await run(env.DB,'DELETE FROM memories WHERE created_at<?',now-MEMORY_RETENTION_MS);
   await run(env.DB,"DELETE FROM digests WHERE updated_at<? AND status='sent'",now-30*ONE_DAY_MS);
   await run(env.DB,`DELETE FROM digest_chunks WHERE created_at<? AND NOT EXISTS (
@@ -219,7 +223,7 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
       AND d.local_day=digest_chunks.local_day AND d.status!='sent')`,now-4*ONE_DAY_MS);
   const {hhmm} = localClock(now,env.BOT_TIME_ZONE || 'Europe/Moscow');
   const chats = await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
-    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status='pending' AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
+    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status!='sent' AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
     FROM chats c WHERE c.enabled=1`);
   const outcomes = [];
   for (const chat of chats) {
