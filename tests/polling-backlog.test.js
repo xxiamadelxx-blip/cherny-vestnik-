@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {handleUpdate,runCron} from '../src/index.js';
 
 const NOW=Date.UTC(2026,9,21,18); // 21:00 Moscow
-function fixture(){
+function fixture(messageCount=95){
   const sqlite=new DatabaseSync(':memory:');
   for(const name of [
     '0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql',
@@ -18,7 +18,7 @@ function fixture(){
   };}};}};
   const env={DB,TELEGRAM_BOT_TOKEN:'mock',GROQ_API_KEY:'mock',
     TELEGRAM_TRANSPORT:'polling',TELEGRAM_POLL_BATCH:'40',TELEGRAM_POLL_PAGES:'1',BOT_TIME_ZONE:'Europe/Moscow'};
-  const delivered=[],updates=Array.from({length:95},(_,i)=>({
+  const delivered=[],updates=Array.from({length:messageCount},(_,i)=>({
     update_id:i+1000,
     message:{message_id:i+101,date:Math.floor((NOW-30*60_000)/1000),
       chat:{id:-100999,type:'supergroup',title:'Fictional consenting chat'},
@@ -133,4 +133,29 @@ test('a deliberately short Telegram page cannot masquerade as an empty queue',as
   assert.equal(calls,2,'must request another page after a short nonempty response');
   assert.equal(f.count(),1);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0);
+});
+
+
+test('burst of 1000 Telegram updates drains without losing any before newspaper snapshot',async()=>{
+  const f=fixture(1000);
+  f.env.TELEGRAM_POLL_PAGES='4';
+  await handleUpdate(f.adminMessage,f.env,f.fetcher,NOW-40*60_000);
+  for(let minute=0;minute<6;minute++){
+    const result=await runCron(f.env,NOW+minute*60_000,f.fetcher);
+    assert.deepEqual(result,[]);
+    assert.equal(f.count(),(minute+1)*160);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0,
+      'must not publish a 1000-message burst from a partial queue');
+  }
+  const final=await runCron(f.env,NOW+6*60_000,f.fetcher);
+  assert.equal(final[0].result,'processing');
+  assert.equal(f.count(),1000);
+  assert.equal(f.pollCalls,26);
+  const ids=f.sqlite.prepare('SELECT message_id FROM messages ORDER BY message_id').all().map(row=>row.message_id);
+  assert.equal(new Set(ids).size,1000);
+  assert.equal(ids[0],101);
+  assert.equal(ids.at(-1),1100);
+  const range=f.sqlite.prepare('SELECT window_start,window_end FROM digests').get();
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM messages WHERE posted_at>=? AND posted_at<?')
+    .get(range.window_start,range.window_end).n,1000);
 });
