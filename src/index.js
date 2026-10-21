@@ -80,12 +80,14 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       const next=quotaWaitUntil(quota,Date.now(),env);
       const until=next?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(next)):null;
       const usage=quota?.day_utc===new Date().toISOString().slice(0,10)?Number(quota.used_tokens||0):0;
-      const pending=await row(env.DB,"SELECT local_day,window_start,window_end FROM digests WHERE chat_id=? AND status!='sent' AND window_end IS NOT NULL ORDER BY local_day LIMIT 1",chatId);
+      const pending=await row(env.DB,"SELECT local_day,window_start,window_end FROM digests WHERE chat_id=? AND status IN ('pending','working') AND window_end IS NOT NULL ORDER BY local_day LIMIT 1",chatId);
+      const blocked=await row(env.DB,"SELECT COUNT(*) AS n FROM digests WHERE chat_id=? AND status='needs_review'",chatId);
       const done=pending?await row(env.DB,'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,pending.local_day):null;
       const total=pending?await row(env.DB,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',chatId,pending.window_start,pending.window_end):null;
       const progress=pending?'\nОбработка '+pending.local_day+': '+(done?.n||0)+'/'+(total?.n||0)+' сообщений.':'';
+      const review=blocked?.n?'\n⚠️ Газет на редакторской проверке: '+blocked.n+'. Команда /retry доступна администратору (архив хранится до 4 дней).':'';
       const quotaLine=next?'⏳ Groq: пауза до '+until+' по Москве.':'✅ Groq: запросы разрешены.';
-      await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}`,fetcher);;
+      await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}${review}`,fetcher);;
     } else if (cmd.name === 'time') {
       if (!/^([01]\d|2[0-3]):(00|15|30|45)$/.test(cmd.arg)) {
         await send(env, chatId, 'Время укажи по Москве и кратно 15 минутам: /time 21:00', fetcher);
@@ -301,18 +303,20 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
   // Retain at most four days of raw text and two weeks of previous-joke excerpts.
   await run(env.DB,`DELETE FROM messages WHERE posted_at<? AND NOT EXISTS (
     SELECT 1 FROM digests d WHERE d.chat_id=messages.chat_id
-      AND d.status!='sent' AND d.window_start IS NOT NULL
+      AND d.status IN ('pending','working') AND d.window_start IS NOT NULL
       AND d.window_end IS NOT NULL
       AND messages.posted_at>=d.window_start AND messages.posted_at<d.window_end
   )`,now-MESSAGE_RETENTION_MS);
   await run(env.DB,'DELETE FROM memories WHERE created_at<?',now-MEMORY_RETENTION_MS);
   await run(env.DB,"DELETE FROM digests WHERE updated_at<? AND status='sent'",now-30*ONE_DAY_MS);
+  // Unaccepted editorial drafts cannot retain private source text indefinitely.
+  await run(env.DB,"DELETE FROM digests WHERE updated_at<? AND status='needs_review'",now-4*ONE_DAY_MS);
   await run(env.DB,`DELETE FROM digest_chunks WHERE created_at<? AND NOT EXISTS (
     SELECT 1 FROM digests d WHERE d.chat_id=digest_chunks.chat_id
-      AND d.local_day=digest_chunks.local_day AND d.status!='sent')`,now-4*ONE_DAY_MS);
+      AND d.local_day=digest_chunks.local_day AND d.status IN ('pending','working'))`,now-4*ONE_DAY_MS);
   await run(env.DB,`DELETE FROM digest_reductions WHERE updated_at<? AND NOT EXISTS (
     SELECT 1 FROM digests d WHERE d.chat_id=digest_reductions.chat_id
-      AND d.local_day=digest_reductions.local_day AND d.status!='sent')`,now-4*ONE_DAY_MS);
+      AND d.local_day=digest_reductions.local_day AND d.status IN ('pending','working'))`,now-4*ONE_DAY_MS);
   const {hhmm} = localClock(now,env.BOT_TIME_ZONE || 'Europe/Moscow');
   const chats = await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
     (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status IN ('pending','working') AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
