@@ -27,6 +27,8 @@ function fixture() {
   let groqCalls=0;
   let failSend=false;
   let failAI=false;
+  let failAtGroq=null;
+  let responseQueue=[];
   let onGroq=null;
   let responseText='💀 ЧЁРНЫЙ ВЕСТНИК\n\nГлавная новость: Вася [#101] возмущался происходящим. Какой ёбаный цирк.';
   let sendsAttempted=0;
@@ -35,11 +37,11 @@ function fixture() {
     if(String(url).includes('api.groq.com')) {
       groqCalls++;
       if(onGroq) { const fn=onGroq;onGroq=null; await fn(); }
-      if(failAI) return new Response(JSON.stringify({error:{message:'test'}}),{status:429});
+      if(failAI || failAtGroq===groqCalls) return new Response(JSON.stringify({error:{message:'test'}}),{status:429,headers:{'retry-after':'125'}});
       const request=JSON.parse(opts.body);
       assert.equal(request.model,'qwen/qwen3.8-27b');
       assert.ok(!request.messages[0].content.includes('конец замены'));
-      return Response.json({choices:[{message:{content:responseText}}]});
+      return Response.json({choices:[{message:{content:responseQueue.length?responseQueue.shift():responseText}}]});
     }
     const method=String(url).split('/').at(-1);
     const payload=JSON.parse(opts.body);
@@ -63,7 +65,7 @@ function fixture() {
   return {sqlite,env,sent,fetcher,makeMsg,query,
     get groqCalls(){return groqCalls},
     setFailSend:()=>{failSend=true},setFailAI:(v=true)=>{failAI=v},setOnGroq:(cb)=>{onGroq=cb},
-    setAIResponse:(s)=>{responseText=s},setFailAtSend:(n)=>{failAtSend=n},
+    setAIResponse:(s)=>{responseText=s},setAISequence:(items)=>{responseQueue=[...items]},setFailAtGroq:(n)=>{failAtGroq=n},setFailAtSend:(n)=>{failAtSend=n},
     get attemptedSends(){return sendsAttempted}};
 }
 
@@ -245,4 +247,41 @@ test('fabricated verbatim quote is blocked before Telegram delivery, with editor
  assert.equal(f.groqCalls,2,'one initial draft plus one automatic repair, no calls during cooldown');
  assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
  assert.ok(f.query('SELECT editorial_draft FROM digests')[0].editorial_draft);
+});
+
+
+test('wrong Groq quote is automatically rewritten using cited raw messages before sending',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ await handleUpdate(f.makeMsg({id:101,text:'Ладно, я включил автонаведение.'}),f.env,f.fetcher,NOW-300000);
+ f.setAISequence([
+   '💀 ЧЁРНЫЙ ВЕСТНИК. Вася заявил «Никогда не включу помощь» [#101]. Блядь, какое переобувание.',
+   '💀 ЧЁРНЫЙ ВЕСТНИК. Вася сначала выпендривался, а потом сообщил, что включил автонаведение [#101]. Вот и вся ёбаная война с настройками.'
+ ]);
+ assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'sent');
+ assert.equal(f.groqCalls,2);
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+ assert.equal(f.query('SELECT editorial_draft FROM digests')[0].editorial_draft,null);
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
+ assert.equal(f.sent.filter(p=>p.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,1);
+ assert.ok(!f.sent.some(p=>p.text.includes('Никогда не включу')));
+});
+
+test('429 during quote correction reuses saved draft and completes after provider reset',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ await handleUpdate(f.makeMsg({id:101,text:'Я поменял мнение и включил прицел.'}),f.env,f.fetcher,NOW-300000);
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася заявил «Я не умею ничего» [#101]. Ёбаный цирк.');
+ f.setFailAtGroq(2);
+ assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'waiting');
+ assert.ok(f.query('SELECT editorial_draft FROM digests')[0].editorial_draft);
+ assert.equal(f.query('SELECT body FROM digests')[0].body,null);
+ assert.equal(f.groqCalls,2);
+ assert.equal(f.sent.filter(p=>p.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,0);
+ // Simulate the provider's reset, no sleep.
+ f.sqlite.prepare('UPDATE groq_budget SET next_attempt_at=0,remaining_tokens=NULL,remaining_requests=NULL').run();
+ f.setAIResponse('💀 ЧЁРНЫЙ ВЕСТНИК. Вася включил прицел [#101] и разнёс собственную прежнюю позу. Блядь, героизм пришёл кнопкой.');
+ assert.equal(await publishDigest(f.env,'-1001111',NOW+1000,f.fetcher),'sent');
+ assert.equal(f.groqCalls,3,'one initial draft and two repair calls, no regeneration of initial draft');
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
 });
