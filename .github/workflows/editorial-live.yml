@@ -20,7 +20,7 @@ jobs:
           node-version: '22'
       - name: Unit tests and syntax
         run: npm run check && npm test
-      - name: Real Groq editorial generation on 30 fictional chat messages
+      - name: Real Groq editorial generation and evidence-guided repair on 30 fictional messages
         run: node scripts/editorial-live.mjs
       - name: Preserve independent editorial acceptance evidence
         if: always()
