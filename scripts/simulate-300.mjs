@@ -212,6 +212,7 @@ export async function simulate({groqKey=process.env.GROQ_API_KEY, liveFetch=fetc
   const saved=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
   assert.equal(saved,300);
   let outcome='processing',steps=0;
+  try {
   while(outcome==='processing'||outcome==='waiting') {
     if(steps>0) {
       const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
@@ -229,6 +230,24 @@ export async function simulate({groqKey=process.env.GROQ_API_KEY, liveFetch=fetc
     if(++steps>36)throw Error('Real Groq simulation exhausted attempts without a full report');
   }
   assert.equal(outcome,'sent','Never classify a partial report as a successful 300-message simulation');
+  } catch(err) {
+    const processedBeforeFailure=sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n;
+    const budget=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
+    mkdirSync('reports',{recursive:true});
+    writeFileSync('reports/simulation-300-run.md',[
+      '# Real Groq 300-message rehearsal: NOT ACCEPTED',
+      '',
+      '- Outcome: '+(/quota deferred/.test(String(err))?'DEFERRED (free Groq quota)':'FAIL'),
+      '- Source messages recorded: '+saved+'/300',
+      '- Fully analyzed and checkpointed in this CI run: '+processedBeforeFailure+'/300',
+      '- Groq HTTP calls: '+aiCalls,
+      '- Next quota allowance: '+(budget?.next_attempt_at?new Date(budget.next_attempt_at).toISOString():'not available'),
+      '- Failure reason: '+String(err.message).slice(0,230),
+      '- This isolated GitHub Action uses in-memory SQLite. Production Cloudflare uses persistent D1.',
+      '- No complete newspaper was accepted, no real Telegram delivery occurred.'
+    ].join('\n'));
+    throw err;
+  }
   const processed=sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n;
   const allIds=new Set(sqlite.prepare('SELECT ids_json FROM digest_chunks').all().flatMap(r=>JSON.parse(r.ids_json)));
   assert.equal(processed,300);
@@ -293,6 +312,7 @@ export async function simulate({groqKey=process.env.GROQ_API_KEY, liveFetch=fetc
   log('SYNTHETIC 300: '+count+'/'+Object.keys(checks).length+' PASS. Real Groq calls='+aiCalls+'; '+processed+'/300 processed; topics='+namedTopics.length+'/5; profanity='+profanity);
   log('REAL GROQ DIGEST PREVIEW:\n'+body.slice(0,3500));
   if(count!==Object.keys(checks).length)throw Error('Simulation mechanical checks failed');
+  writeFileSync('reports/simulation-300-run.md','# Real Groq 300-message rehearsal: TECHNICAL PASS\n\n- 300/300 synthetic messages analyzed with real Groq.\n- AI requests: '+aiCalls+'.\n- Telegram messages mocked, no real group involved.\n');
   return {checks,body,report,messages};
 }
 const script=process.argv[1]?resolve(process.argv[1]):null;
