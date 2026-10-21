@@ -50,8 +50,9 @@ export async function run1000({key=process.env.GROQ_API_KEY,fetcher=fetch,log=co
  while(outcome==='processing'){
    if(attempts) await new Promise(done=>setTimeout(done,31000));
    try{outcome=await publishDigest(env,CHAT,NOW,isolated);}
-   catch(err){if(!/Groq HTTP 429/.test(String(err)))throw err;outcome='processing';}
+   catch(err){if(!/Groq HTTP 429|Groq response empty or truncated/.test(String(err)))throw err;outcome='processing';log('Batch retry: '+String(err.message).slice(0,60));}
    attempts++;
+   log('Progress: '+sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n+'/1000 after '+attempts+' attempts');
    if(attempts>42)throw Error('Groq daily free limit or throughput prevented completion');
  }
  const chunks=sqlite.prepare('SELECT * FROM digest_chunks ORDER BY chunk_no').all();

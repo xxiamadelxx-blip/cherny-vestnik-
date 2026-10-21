@@ -144,12 +144,13 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       }
       const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?', chatId,start,end);
       const total = Number(n?.n || 0);
+      const smallRows = total>0 && total<=40 ? await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
+        WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end) : [];
       let body;
       if (total === 0) {
         body = `💀 ЧЁРНЫЙ ВЕСТНИК | ${day}\n\nСегодня в чате тишина. Кажется, здравый смысл наконец-то победил. Или все просто спят, блядь.`;
-      } else if (total <= 40) {
-        const messages=await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
-          WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end);
+      } else if (total <= 40 && packTranscript(smallRows).count === total) {
+        const messages=smallRows;
         // No sampling or partial report even for small chats.
         body=(await createDigest({env,day,total,rows:messages,previous:await all(db,
           'SELECT excerpt FROM memories WHERE chat_id=? ORDER BY local_day DESC LIMIT 2',chatId),fetcher})).body;

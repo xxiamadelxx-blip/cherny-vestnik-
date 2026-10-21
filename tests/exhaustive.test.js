@@ -64,3 +64,14 @@ test('chunker never silently truncates or samples any included message',()=>{
   while(offset<msgs.length){const pack=packTranscript(msgs.slice(offset,offset+40));assert.ok(pack.count>0);assert.equal(pack.ids[0],offset+1);assert.ok(pack.transcript.includes('А'.repeat(700)));offset+=pack.count;count++;}
   assert.equal(offset,1000);assert.ok(count>25);
 });
+
+test('few very long messages also take complete batch pipeline rather than abort',async()=>{
+  const f=fixture();
+  await handleUpdate(f.message(1,'/enable'),f.env,f.fetcher,NOW-4000000);
+  for(let i=1001;i<=1020;i++)await handleUpdate(f.message(i,('Очень длинное обсуждение блядь. ').repeat(46)+' Конец сообщения '+i),f.env,f.fetcher,NOW-4000000+i*1000);
+  let status='processing',cycles=0;
+  do{status=await publishDigest(f.env,'-100123',NOW+cycles*60000,f.fetcher);cycles++;assert.ok(cycles<40);}while(status==='processing');
+  assert.equal(status,'sent');
+  assert.equal(f.seenIds.size,20);
+  assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,20);
+});
