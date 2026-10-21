@@ -71,7 +71,16 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
     } else if (cmd.name === 'status') {
       const chat = await row(env.DB, 'SELECT enabled,digest_hhmm FROM chats WHERE chat_id=?', chatId);
       const count = await row(env.DB, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=?', chatId);
-      await send(env, chatId, `🗞 Вестник: ${chat?.enabled ? 'включён' : 'выключен'}\nВремя: ${chat?.digest_hhmm || '21:00'} по Москве\nСообщений в памяти: ${count?.n || 0}\nМодель: ${env.GROQ_MODEL || 'qwen/qwen3.8-27b'}`, fetcher);
+      const quota=await readGroqBudget(env);
+      const next=quotaWaitUntil(quota,Date.now(),env);
+      const until=next?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(next)):null;
+      const usage=quota?.day_utc===new Date().toISOString().slice(0,10)?Number(quota.used_tokens||0):0;
+      const pending=await row(env.DB,"SELECT local_day,window_start,window_end FROM digests WHERE chat_id=? AND status!='sent' AND window_end IS NOT NULL ORDER BY local_day LIMIT 1",chatId);
+      const done=pending?await row(env.DB,'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,pending.local_day):null;
+      const total=pending?await row(env.DB,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',chatId,pending.window_start,pending.window_end):null;
+      const progress=pending?'\nОбработка '+pending.local_day+': '+(done?.n||0)+'/'+(total?.n||0)+' сообщений.':'';
+      const quotaLine=next?'⏳ Groq: пауза до '+until+' по Москве.':'✅ Groq: запросы разрешены.';
+      await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}`,fetcher);;
     } else if (cmd.name === 'time') {
       if (!/^([01]\d|2[0-3]):(00|15|30|45)$/.test(cmd.arg)) {
         await send(env, chatId, 'Время укажи по Москве и кратно 15 минутам: /time 21:00', fetcher);
