@@ -103,3 +103,51 @@ export function correctNearbyNameTypos(body, rows) {
   }
   return text;
 }
+
+
+// Repair only NEAR-MISS quotes by substituting a genuinely contiguous span from
+// the cited raw message. A fabricated quote with unrelated words still FAILS.
+// This costs zero Groq tokens and never invents source text.
+function sourceWords(text) {
+  return [...String(text).matchAll(/[\p{L}\p{N}]+/gu)]
+    .map(m=>({word:m[0].toLocaleLowerCase('ru-RU'),start:m.index,end:m.index+m[0].length}));
+}
+function sameStem(a,b) {
+  if(a===b)return true;
+  // Word ending changes ('понимаем' vs 'понимаете') may be repaired,
+  // but quoted output is always replaced with a literal source excerpt.
+  return a.length>=5&&b.length>=5&&a.slice(0,3)===b.slice(0,3);
+}
+function nearestLiteralSource(quote,source) {
+  const required=sourceWords(quote).map(t=>t.word);
+  const words=sourceWords(source);
+  if(required.length<2||required.length>45||words.length>800)return null;
+  let winner=null;
+  const maxWidth=Math.min(180,Math.max(70,quote.length*3));
+  for(let i=0;i<words.length;i++){
+    for(let j=i;j<words.length&&j<i+38;j++){
+      const width=words[j].end-words[i].start;
+      if(width>maxWidth)break;
+      const candidates=words.slice(i,j+1).map(t=>t.word);
+      if(!required.every(term=>candidates.some(word=>sameStem(term,word))))continue;
+      if(!winner||width<winner.width)
+        winner={width,source:source.slice(words[i].start,words[j].end)};
+      break;
+    }
+  }
+  return winner?.source||null;
+}
+export function correctNearMissQuotes(body,sourceRows) {
+  const source=new Map(sourceRows.map(row=>[Number(row.message_id),String(row.body||'')]));
+  return String(body??'').replace(QUOTED_SOURCE,(full,quoted,id)=>{
+    const actual=source.get(Number(id));
+    if(!actual||normalized(actual).includes(normalized(quoted)))return full;
+    const literal=nearestLiteralSource(quoted,actual);
+    if(!literal)return full;
+    const opening=full[0];
+    const closing=opening==='«'?'»':opening==='“'?'”':'"';
+    const start=full.indexOf(closing,1);
+    if(start<0)return full;
+    return opening+literal+closing+full.slice(start+closing.length);
+  });
+}
