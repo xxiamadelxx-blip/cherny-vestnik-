@@ -94,3 +94,17 @@ No claim of unlimited free throughput: long messages and Groq RPM/TPM/TPD quotas
 - **PASS** Full Telegram 4096-character preservation and 30/30 tests: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39610037489
 - **PASS** latest Cloudflare deploy and D1 migration: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39610030156
 - Full Telegram 4096-character preservation; chat media/voice audio is outside the current text-only contract.
+
+## 2026-10-21 follow-up: harder satire and exhaustive evidence durability
+
+- **PASS**, 34/34 deterministic tests: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39622348739
+- **PASS**, production Cloudflare deploy: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39622296820
+- Removed the old 85-message sampling implementation. Full input collection uses consecutive `packTranscript` chunks; 1000-message deterministic coverage remains protected by tests.
+- Added crash recovery for in-progress jobs and protection of expired source messages while the corresponding digest is unfinished.
+- Enhanced intermediate evidence extraction to retain more grounded events, and added hierarchical merge splitting to avoid oversized Groq requests; 34 CI checks include a constrained-context merge test.
+- **FAIL**, first real revised 300-message editorial run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39620210210 (evidence exceeded the previous note bound; output was NOT accepted).
+- **FAIL**, next real revised 300-message editorial run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39620951720 (Groq HTTP 413).
+- **FAIL**, subsequent live editorial run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39622203790 (Groq reply truncated).
+- **FAIL**, latest live editorial run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39622296828 (free Groq rate-limit retries exhausted).
+- **Editorial release gate remains NOT ACCEPTED** until the stronger style and factual attributions pass a fresh real-Groq rehearsal when quota is available.
+- These test-run FAILs do not reverse the **previous successful real 1000/1000 coverage** result, but they do mean there is **no successful latest editorial sample**. Never label all quality gates PASS.
