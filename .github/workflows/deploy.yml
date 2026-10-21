@@ -9,6 +9,8 @@ on:
       - 'migrations/**'
       - 'wrangler.jsonc'
       - 'package.json'
+      - 'scripts/activate-cloudflare.mjs'
+      - 'scripts/provision-d1.mjs'
 permissions:
   contents: read
 jobs:
