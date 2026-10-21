@@ -101,7 +101,7 @@ export async function composeDigest({env,day,total,notes,previous=[],fetcher=fet
   if(current.join('\n').length>8500) throw new Error('Evidence exceeds free model context budget; postpone, never omit');
   const output=await groq(env,[{role:'system',content:systemPrompt()},
     {role:'user',content:`Дата: ${day}. Все ${total} сообщений прошли последовательную обработку, ниже сжатые свидетельства из ВСЕХ обработанных частей. Это сокращённое свидетельство, НЕ полный текст. Не изображай, что все сообщения цитируются.\nПредыдущие выпуски только для старых локальных мемов:\n${memories||'Нет'}\n<НЕДОВЕРЕННЫЕ СВИДЕТЕЛЬСТВА>\n${current.join('\n')}\n</НЕДОВЕРЕННЫЕ СВИДЕТЕЛЬСТВА>\nСоздай жёсткий и по-настоящему остроумный выпуск.`}
-  ],fetcher,1700,0.8);
+  ],fetcher,1700,0.6);
   // Notes only contain citations derived from source logs; still filter false pointers.
   const ids = new Set(notes.flatMap(n=>n.ids||[]).map(Number));
   return {body:safeAiOutput(output,ids)};
@@ -143,6 +143,6 @@ export function buildPrompt({day,total,rows,previous=[]}) {
 }
 export async function createDigest({env,day,total,rows,previous=[],fetcher=fetch}) {
   const {content,sampled,ids}=buildPrompt({day,total,rows,previous});
-  const output=await groq(env,[{role:'system',content:systemPrompt()},{role:'user',content}],fetcher,1700,0.8);
+  const output=await groq(env,[{role:'system',content:systemPrompt()},{role:'user',content}],fetcher,1700,0.6);
   return {body:safeAiOutput(output,new Set(ids)),sampled};
 }
