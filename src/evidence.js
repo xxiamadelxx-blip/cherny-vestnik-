@@ -35,18 +35,17 @@ export function verifyEditorialEvidence(body, sourceRows) {
   }
   return {cited:refs.length,quotesChecked:checked};
 }
-export async function verifyPublishedDigest({db,chatId,body,rows=null}) {
+export async function fetchCitedMessages({db,chatId,body}) {
   const refs=citedMessageIds(body);
   if(refs.length>100)throw new EvidenceValidationError('excessive citation count');
-  if(!rows) {
-    if(!refs.length)rows=[];
-    else{
-      // Only fetch messages the digest actually cites. No unbounded transcript read.
-      const placeholders=refs.map(()=>'?').join(',');
-      const query='SELECT message_id,body,display_name FROM messages WHERE chat_id=? AND message_id IN ('+placeholders+')';
-      const queryResult=await db.prepare(query).bind(String(chatId),...refs).all();
-      rows=queryResult.results||[];
-    }
-  }
+  if(!refs.length)return [];
+  // Only fetch messages this digest actually cites, never all chat messages.
+  const placeholders=refs.map(()=>'?').join(',');
+  const query='SELECT message_id,body,display_name FROM messages WHERE chat_id=? AND message_id IN ('+placeholders+')';
+  const result=await db.prepare(query).bind(String(chatId),...refs).all();
+  return result.results||[];
+}
+export async function verifyPublishedDigest({db,chatId,body,rows=null}) {
+  if(!rows)rows=await fetchCitedMessages({db,chatId,body});
   return verifyEditorialEvidence(body,rows);
 }
