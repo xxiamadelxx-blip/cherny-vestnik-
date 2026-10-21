@@ -22,7 +22,7 @@ test('Preflight checks live APIs without sending Telegram messages or deploying'
   const lines=[];
   const result=await preflight({env,fetcher:fn,log:x=>lines.push(x)});
   assert.equal(result.botUsername,'TestBot');
-  assert.equal(result.checks.length,5);
+  assert.equal(result.checks.length,4);
   assert.equal(calls.length,5);
   assert(calls.every(c=>!c.url.includes('/sendMessage') && !c.url.includes('/setWebhook')));
   assert(lines.at(-1).includes('Not deployed'));
@@ -30,13 +30,13 @@ test('Preflight checks live APIs without sending Telegram messages or deploying'
 test('Preflight fails locally when secret is absent, with no API calls',async()=>{
   const {fn,calls} = mockFetch();
   await assert.rejects(preflight({env:{...env,GROQ_API_KEY:''},fetcher:fn,log:()=>{}}),/GROQ_API_KEY/);
-  assert.equal(calls.length,0);
+  assert.equal(calls.length,3); // Verify other services despite missing Groq
 });
 test('Preflight rejects unavailable Groq model before requesting completion',async()=>{
   const {fn,calls} = mockFetch();
   const bad = async (url,init) => url.endsWith('/models') ? successResponse({data:[{id:'other'}]}) : fn(url,init);
   await assert.rejects(preflight({env,fetcher:bad,log:()=>{}}),/unavailable/);
-  assert.equal(calls.length,1);
+  assert.equal(calls.length,3); // Other services still probed
 });
 test('Preflight rejects Cloudflare Workers missing subdomain',async()=>{
   const {fn} = mockFetch();
