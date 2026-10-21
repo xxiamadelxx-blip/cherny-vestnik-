@@ -10,6 +10,7 @@ const SCHEMA=readFileSync(new URL('../migrations/0001_init.sql',import.meta.url)
 function fixture() {
   const sqlite=new DatabaseSync(':memory:');
   sqlite.exec(SCHEMA);
+  sqlite.exec(readFileSync(new URL('../migrations/0002_exhaustive.sql',import.meta.url),'utf8'));
   const db={prepare(query){
     const stmt=sqlite.prepare(query);
     return {bind(...params){return {
@@ -57,7 +58,7 @@ function fixture() {
   function query(sql,...params) {return sqlite.prepare(sql).all(...params);}
   return {sqlite,env,sent,fetcher,makeMsg,query,
     get groqCalls(){return groqCalls},
-    setFailSend:()=>{failSend=true},setFailAI:()=>{failAI=true},setOnGroq:(cb)=>{onGroq=cb},
+    setFailSend:()=>{failSend=true},setFailAI:(v=true)=>{failAI=v},setOnGroq:(cb)=>{onGroq=cb},
     setAIResponse:(s)=>{responseText=s},setFailAtSend:(n)=>{failAtSend=n},
     get attemptedSends(){return sendsAttempted}};
 }
@@ -95,15 +96,16 @@ test('consent gate, admin permission, deduplication, published-once cron, memory
   assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
 });
 
-test('AI outage publishes factual-only fallback, not fabricated gossip',async()=>{
+test('AI outage keeps digest pending and does not publish partial fiction',async()=>{
   const f=fixture();
   await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
   await handleUpdate(f.makeMsg({id:101}),f.env,f.fetcher,NOW-300000);
   f.setFailAI();
-  const result=await publishDigest(f.env,'-1001111',NOW,f.fetcher);
-  assert.equal(result,'sent');
-  assert.match(f.sent.at(-1).text,/Нейросеть не ответила/);
-  assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+  await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/Groq HTTP 429/);
+  assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
+  assert.equal(f.sent.some(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')),false);
+  f.setFailAI(false);
+  assert.equal(await publishDigest(f.env,'-1001111',NOW+1000,f.fetcher),'sent');
 });
 
 test('failed Telegram post resumes prepared digest without a second AI call',async()=>{

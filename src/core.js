@@ -26,7 +26,7 @@ export function cleanText(s, maxLength = 700) {
 export function normalizeMessage(message) {
   if (!message || !['group', 'supergroup'].includes(message.chat?.type)) return null;
   if (message.from?.is_bot || message.forward_origin) return null;
-  const body = cleanText(message.text ?? message.caption);
+  const body = cleanText(message.text ?? message.caption, 4000);
   if (!body || body.startsWith('/')) return null;
   const displayName = cleanText(
     [message.from?.first_name, message.from?.last_name].filter(Boolean).join(' ') ||
@@ -92,4 +92,21 @@ export function safeAiOutput(raw, validMessageIds) {
   // Strip any fabricated source pointers; do not fabricate references to real people.
   return text.replace(/\[#(\d+)\]/g, (match, id) => validMessageIds.has(Number(id)) ? match : '[без подтверждения]')
     .slice(0, 11000);
+}
+
+// Consecutive batches: unlike selectTranscript, no input message is sampled away.
+// The caller advances its durable cursor ONLY after a batch is analyzed and saved.
+export function packTranscript(rows, maxChars = 5400, maxEntries = 40) {
+  const selected = [];
+  const ids = [];
+  let length = 0;
+  for (const m of rows) {
+    if (selected.length >= maxEntries) break;
+    const line = `[#${m.message_id}] ${cleanText(m.display_name, 65)}: ${cleanText(m.body, 4000)}`;
+    if (selected.length && length + line.length + 1 > maxChars) break;
+    selected.push(line);
+    ids.push(Number(m.message_id));
+    length += line.length + 1;
+  }
+  return {transcript:selected.join('\n'),count:selected.length,ids};
 }

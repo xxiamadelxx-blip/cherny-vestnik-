@@ -3,7 +3,7 @@
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
-  "triggers": {"crons": ["*/15 * * * *"]},
+  "triggers": {"crons": ["* * * * *"]},
   "vars": {
     "GROQ_MODEL": "qwen/qwen3.8-27b",
     "BOT_TIME_ZONE": "Europe/Moscow"

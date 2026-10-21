@@ -1,0 +1,66 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {handleUpdate,publishDigest,runCron} from '../src/index.js';
+import {packTranscript} from '../src/core.js';
+
+const NOW=Date.UTC(2026,9,21,18,0);
+function fixture(total=1000) {
+  const sqlite=new DatabaseSync(':memory:');
+  for(const path of ['0001_init.sql','0002_exhaustive.sql'])
+    sqlite.exec(readFileSync(new URL('../migrations/'+path,import.meta.url),'utf8'));
+  const DB={prepare(sql){const q=sqlite.prepare(sql);return {bind(...a){return {
+    first:async()=>q.get(...a)||null,all:async()=>({results:q.all(...a)}),
+    run:async()=>({meta:{changes:q.run(...a).changes}})};}};}};
+  let calls=0; const seenIds=new Set(), sent=[];
+  const fetcher=async(url,opts)=>{
+    if(String(url).includes('groq.com')) {
+      calls++;
+      const msgs=JSON.parse(opts.body).messages;
+      const content=msgs.at(-1).content;
+      if(content.includes('Недоверенная переписка')){
+        for(const match of content.matchAll(/\[#(\d+)\] [^\n]+/g))seenIds.add(Number(match[1]));
+        return Response.json({choices:[{message:{content:'[#1001] Саня: пообещал оплатить пиццу, но снова устроил ёбаный цирк. [#1002] Марта: заметила противоречие.'},finish_reason:'stop'}]});
+      }
+      return Response.json({choices:[{message:{content:'💀 ЧЁРНЫЙ ВЕСТНИК\n\n🔥 Чат снова устроил ёбаный цирк с пиццей. Саня весь день строил планы, а Марта считала его оправдания. Блядь, фан-клуб противоречий официально открыт.\n\n🪦 Завтра попробуйте сначала поесть, а потом спорить.'},finish_reason:'stop'}]});
+    }
+    const method=String(url).split('/').at(-1);
+    if(method==='getChatMember')return Response.json({ok:true,result:{status:'administrator'}});
+    if(method==='sendMessage'){sent.push(JSON.parse(opts.body).text);return Response.json({ok:true,result:{message_id:sent.length}});}
+    throw Error('Unexpected external call');
+  };
+  const env={DB,TELEGRAM_BOT_TOKEN:'fake',GROQ_API_KEY:'fake',BOT_TIME_ZONE:'Europe/Moscow'};
+  const message=(i,body)=>({message:{chat:{id:-100123,type:'supergroup',title:'Synthetic'},message_id:i,
+    date:Math.floor((NOW-3600000+i*1000)/1000),from:{id:i%6+1,first_name:['Саня','Марта','Дима','Лиза','Паша','Игорь'][i%6]},text:body}});
+  const query=(sql,...params)=>sqlite.prepare(sql).all(...params);
+  return {sqlite,env,fetcher,message,query,sent,seenIds,get calls(){return calls}};
+}
+
+test('1000 messages each appear in exactly one analyzed AI batch; no sampling',async()=>{
+  const f=fixture();
+  await handleUpdate(f.message(1,'/enable'),f.env,f.fetcher,NOW-4000000);
+  for(let i=1001;i<=2000;i++)await handleUpdate(f.message(i,'Выпуск про пиццу: спорим о цене, кто платит и почему всё пошло нахуй. Сообщение '+i),f.env,f.fetcher,NOW-4000000+i*1000);
+  assert.equal(f.query('SELECT COUNT(*) AS n FROM messages')[0].n,1000);
+  let outcome,attempts=0;
+  do{
+    outcome=await publishDigest(f.env,'-100123',NOW+attempts*60_000,f.fetcher);
+    attempts++;
+    assert.ok(attempts<100,'must converge');
+  }while(outcome==='processing');
+  assert.equal(outcome,'sent');
+  assert.equal(f.seenIds.size,1000);
+  const notes=f.query('SELECT * FROM digest_chunks ORDER BY chunk_no');
+  assert.equal(notes.reduce((s,n)=>s+n.processed,0),1000);
+  assert.ok(notes.length>20);
+  assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+  assert.equal(await publishDigest(f.env,'-100123',NOW+attempts*60_000,f.fetcher),'already_sent');
+  assert.ok(f.sent.filter(x=>x.includes('ЧЁРНЫЙ ВЕСТНИК')).length===1);
+});
+
+test('chunker never silently truncates or samples any included message',()=>{
+  const msgs=Array.from({length:1000},(_,i)=>({message_id:i+1,display_name:'Тестер',body:'А'.repeat(700)}));
+  let offset=0,count=0;
+  while(offset<msgs.length){const pack=packTranscript(msgs.slice(offset,offset+40));assert.ok(pack.count>0);assert.equal(pack.ids[0],offset+1);assert.ok(pack.transcript.includes('А'.repeat(700)));offset+=pack.count;count++;}
+  assert.equal(offset,1000);assert.ok(count>25);
+});

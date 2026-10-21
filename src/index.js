@@ -1,12 +1,12 @@
 import {
   ONE_DAY_MS, MESSAGE_RETENTION_MS, MEMORY_RETENTION_MS, localClock,
-  scheduledDue, normalizeMessage, splitTelegramText, fallbackDigest, selectTranscript
+  scheduledDue, normalizeMessage, splitTelegramText, packTranscript
 } from './core.js';
-import {createDigest} from './ai.js';
+import {createDigest,analyzeChunk,composeDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 
 const OK = () => new Response('ok', {status:200});
-const PUBLIC_VERSION = '0.1.0';
+const PUBLIC_VERSION = '0.2.0';
 
 function authorizedWebhook(request, secret) {
   const supplied = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
@@ -38,6 +38,7 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       await run(env.DB, 'INSERT OR IGNORE INTO optouts(chat_id,user_id,created_at) VALUES(?,?,?)', chatId,String(message.from.id),now);
       await run(env.DB, 'DELETE FROM messages WHERE chat_id=? AND user_id=?', chatId, String(message.from.id));
       await run(env.DB, 'DELETE FROM memories WHERE chat_id=?', chatId);
+      await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
       await run(env.DB, "DELETE FROM digests WHERE chat_id=? AND status!='sent'", chatId);
       await run(env.DB, "UPDATE digests SET body=NULL WHERE chat_id=? AND status='sent'", chatId);
       await send(env, chatId, '🧹 Твои сохранённые сообщения удалены, дальнейший сбор твоих сообщений отключён, память шуток очищена. Чтобы разрешить сбор снова, напиши /optin. Уже опубликованные выпуски в Telegram автоматически не удаляются.', fetcher);
@@ -64,6 +65,7 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
     } else if (['disable','pause'].includes(cmd.name)) {
       await run(env.DB, 'UPDATE chats SET enabled=0,privacy_epoch=privacy_epoch+1,updated_at=? WHERE chat_id=?', now, chatId);
       await run(env.DB, "DELETE FROM digests WHERE chat_id=? AND status!='sent'", chatId);
+      await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
       await send(env, chatId, '⏸ Бот приостановлен, новые сообщения не сохраняются.', fetcher);
     } else if (cmd.name === 'status') {
       const chat = await row(env.DB, 'SELECT enabled,digest_hhmm FROM chats WHERE chat_id=?', chatId);
@@ -85,10 +87,13 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       const outcome = await publishDigest(env, chatId, now, fetcher);
       if (outcome === 'already_sent') await send(env, chatId, 'Сегодня выпуск уже опубликован. Следующий завтра.', fetcher);
       if (outcome === 'locked') await send(env, chatId, 'Выпуск уже собирается другим запуском.', fetcher);
+      if (outcome === 'processing') await send(env, chatId, '🧠 Полный анализ переписки идёт по частям. Каждое сообщение будет учтено; выпуск появится после завершения анализа, без выборки.', fetcher);
     } else if (cmd.name === 'wipe') {
       await run(env.DB, 'DELETE FROM messages WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM digests WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM memories WHERE chat_id=?', chatId);
+      await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
+      await run(env.DB, 'DELETE FROM digest_chunks WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM optouts WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM chats WHERE chat_id=?', chatId);
       await send(env, chatId, '🧹 Архив группы и настройки полностью удалены. Бот выключен. Для повторного включения: /enable.', fetcher);
@@ -106,9 +111,9 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
     cleaned.chat_id,cleaned.message_id,cleaned.user_id,cleaned.display_name,cleaned.body,cleaned.posted_at);
 }
 
-export async function publishDigest(env, chatId, now = Date.now(), fetcher = fetch) {
+export async function publishDigest(env, chatId, now = Date.now(), fetcher = fetch, dayOverride = null) {
   const db = env.DB;
-  const {day} = localClock(now, env.BOT_TIME_ZONE || 'Europe/Moscow');
+  const day = dayOverride || localClock(now, env.BOT_TIME_ZONE || 'Europe/Moscow').day;
   await run(db, `INSERT OR IGNORE INTO digests(chat_id,local_day,status,lease_until,next_part,updated_at)
     VALUES(?,?,'pending',0,0,?)`, chatId, day, now);
   const lease = now + 120_000;
@@ -132,30 +137,54 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
     if (!job.body) {
       const prev = await row(db, `SELECT MAX(window_end) AS last_end FROM digests
         WHERE chat_id=? AND status='sent' AND local_day!=?`, chatId, day);
-      const start = prev?.last_end || now - ONE_DAY_MS;
-      const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',chatId,start,now);
+      const start = job.window_start ?? prev?.last_end ?? now - ONE_DAY_MS;
+      const end = job.window_end ?? now;
+      if (job.window_end == null) {
+        await run(db, 'UPDATE digests SET window_start=?,window_end=? WHERE chat_id=? AND local_day=?', start,end,chatId,day);
+      }
+      const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?', chatId,start,end);
       const total = Number(n?.n || 0);
-      const messages = (await all(db, `SELECT message_id,user_id,display_name,body,posted_at FROM messages
-        WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at DESC,message_id DESC LIMIT 2000`,chatId,start,now)).reverse();
-      const previous = await all(db, `SELECT excerpt FROM memories WHERE chat_id=? AND local_day!=?
-        ORDER BY local_day DESC LIMIT 2`,chatId,day);
-      const {sampled} = selectTranscript(messages);
       let body;
       if (total === 0) {
         body = `💀 ЧЁРНЫЙ ВЕСТНИК | ${day}\n\nСегодня в чате тишина. Кажется, здравый смысл наконец-то победил. Или все просто спят, блядь.`;
+      } else if (total <= 40) {
+        const messages=await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
+          WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end);
+        // No sampling or partial report even for small chats.
+        body=(await createDigest({env,day,total,rows:messages,previous:await all(db,
+          'SELECT excerpt FROM memories WHERE chat_id=? ORDER BY local_day DESC LIMIT 2',chatId),fetcher})).body;
       } else {
-        try {
-          body = (await createDigest({env,day,total,rows:messages,previous,fetcher})).body;
-        } catch (err) {
-          // Never disguise an AI failure as genuine gossip.
-          console.warn('Digest AI fallback:', String(err).slice(0,130));
-          body = fallbackDigest({day,total,sampleRows:messages,sampled});
+        // Once or twice per minute: exhaustively process consecutive batches,
+        // store AI evidence, and resume safely on the next Cron invocation.
+        let chunks=await all(db, `SELECT chunk_no,processed,ids_json,note FROM digest_chunks
+          WHERE chat_id=? AND local_day=? ORDER BY chunk_no`,chatId,day);
+        let processed=chunks.reduce((sum,c)=>sum+Number(c.processed),0);
+        if(processed>total) throw new Error('Source changed during analysis; refusing inaccurate coverage');
+        for(let batchNo=0; batchNo<2 && processed<total; batchNo++) {
+          const rows=await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
+            WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id LIMIT 40 OFFSET ?`,
+            chatId,start,end,processed);
+          const packet=packTranscript(rows);
+          if(!packet.count) throw new Error('Incomplete transcript; refusing partial newspaper');
+          const evidence=await analyzeChunk({env,rows:rows.slice(0,packet.count),fetcher});
+          await checkConsent();
+          await run(db,`INSERT INTO digest_chunks(chat_id,local_day,chunk_no,processed,ids_json,note,created_at)
+            VALUES(?,?,?,?,?,?,?)`,chatId,day,chunks.length,packet.count,JSON.stringify(evidence.ids),evidence.note,now);
+          chunks.push({chunk_no:chunks.length,processed:packet.count,ids_json:JSON.stringify(evidence.ids),note:evidence.note});
+          processed+=packet.count;
         }
+        if(processed<total) {
+          await run(db,"UPDATE digests SET lease_until=0,status='pending',updated_at=? WHERE chat_id=? AND local_day=?",now,chatId,day);
+          return 'processing';
+        }
+        if(processed!==total) throw new Error('Incomplete coverage');
+        const previous=await all(db,'SELECT excerpt FROM memories WHERE chat_id=? ORDER BY local_day DESC LIMIT 2',chatId);
+        body=(await composeDigest({env,day,total,notes:chunks.map(c=>({note:c.note,ids:JSON.parse(c.ids_json)})),previous,fetcher})).body;
+        body += `\n\n📊 Прочитано и обработано: ${processed} из ${total} сообщений.`;
       }
-      if (total > sampled && !body.includes(`Из ${total} сообщений`)) body += `\n\n📊 Просмотрено для выпуска: ${sampled} из ${total} сообщений.`;
       await checkConsent();
-      await run(db, `UPDATE digests SET body=?, window_start=?, window_end=?, status='working',updated_at=?
-        WHERE chat_id=? AND local_day=?`, body, start, now, now, chatId,day);
+      await run(db, `UPDATE digests SET body=?,status='working',updated_at=?
+        WHERE chat_id=? AND local_day=?`, body,now,chatId,day);
       job = {...job, body, next_part:0};
     }
     const pieces = splitTelegramText(job.body);
@@ -184,12 +213,17 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
   await run(env.DB,'DELETE FROM messages WHERE posted_at<?',now-MESSAGE_RETENTION_MS);
   await run(env.DB,'DELETE FROM memories WHERE created_at<?',now-MEMORY_RETENTION_MS);
   await run(env.DB,"DELETE FROM digests WHERE updated_at<? AND status='sent'",now-30*ONE_DAY_MS);
+  await run(env.DB,`DELETE FROM digest_chunks WHERE created_at<? AND NOT EXISTS (
+    SELECT 1 FROM digests d WHERE d.chat_id=digest_chunks.chat_id
+      AND d.local_day=digest_chunks.local_day AND d.status!='sent')`,now-4*ONE_DAY_MS);
   const {hhmm} = localClock(now,env.BOT_TIME_ZONE || 'Europe/Moscow');
-  const chats = await all(env.DB,'SELECT chat_id,digest_hhmm FROM chats WHERE enabled=1');
+  const chats = await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
+    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status='pending' AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
+    FROM chats c WHERE c.enabled=1`);
   const outcomes = [];
   for (const chat of chats) {
-    if (!scheduledDue(chat.digest_hhmm,hhmm)) continue;
-    try {outcomes.push({chat_id:chat.chat_id,result:await publishDigest(env,chat.chat_id,now,fetcher)});}
+    if (!chat.pending_day && !scheduledDue(chat.digest_hhmm,hhmm)) continue;
+    try {outcomes.push({chat_id:chat.chat_id,result:await publishDigest(env,chat.chat_id,now,fetcher,chat.pending_day||null)});}
     catch(err) {console.warn(`Digest failed for chat ${chat.chat_id}: ${String(err).slice(0,120)}`); outcomes.push({chat_id:chat.chat_id,result:'failed'});}
   }
   return outcomes;
