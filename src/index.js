@@ -5,6 +5,7 @@ import {
 import {createDigest,analyzeChunk,composeDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
+import {verifyPublishedDigest} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.1';
@@ -196,6 +197,10 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         body=(await composeDigest({env,day,total,notes:chunks.map(c=>({note:c.note,ids:JSON.parse(c.ids_json)})),previous,fetcher,chatId,checkConsent})).body;
         body += `\n\n📊 Прочитано и обработано: ${processed} из ${total} сообщений.`;
       }
+      await checkConsent();
+      // Reject invented citations or misquoted participants before ANY Telegram send.
+      // The source query is bounded by the cited IDs, not the total chat size.
+      if(total>0) await verifyPublishedDigest({db,chatId,body});
       await checkConsent();
       await run(db, `UPDATE digests SET body=?,status='working',updated_at=?
         WHERE chat_id=? AND local_day=?`, body,now,chatId,day);
