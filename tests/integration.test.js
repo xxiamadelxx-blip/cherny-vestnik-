@@ -102,10 +102,18 @@ test('AI outage keeps digest pending and does not publish partial fiction',async
   await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
   await handleUpdate(f.makeMsg({id:101}),f.env,f.fetcher,NOW-300000);
   f.setFailAI();
-  await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/Groq HTTP 429/);
+  assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'waiting');
   assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
   assert.equal(f.sent.some(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')),false);
+  const budget=f.query('SELECT * FROM groq_budget')[0];
+  assert.equal(budget.last_status,429);
+  assert.ok(budget.next_attempt_at>Date.now());
+  // A second Cron run must not hit Groq while the persisted cooldown applies.
+  assert.equal(await publishDigest(f.env,'-1001111',NOW+1000,f.fetcher),'waiting');
+  assert.equal(f.groqCalls,1);
   f.setFailAI(false);
+  // Simulate the provider's reset time passing without sleeping during unit tests.
+  f.sqlite.prepare('UPDATE groq_budget SET next_attempt_at=0, remaining_requests=NULL, remaining_tokens=NULL').run();
   assert.equal(await publishDigest(f.env,'-1001111',NOW+1000,f.fetcher),'sent');
 });
 
