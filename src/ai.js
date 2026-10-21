@@ -1,4 +1,4 @@
-import {selectTranscript, safeAiOutput, packTranscript} from './core.js';
+import {safeAiOutput, packTranscript} from './core.js';
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'qwen/qwen3.8-27b';
