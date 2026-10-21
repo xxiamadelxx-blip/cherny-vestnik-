@@ -146,3 +146,40 @@ test('hierarchical evidence merging fits a token-constrained model request',asyn
   assert.equal(finalCalls,1);
   assert.match(result.body,/ЧЁРНЫЙ ВЕСТНИК/);
 });
+
+test('429 preserves already analyzed chunks and resumes without reprocessing them',async()=>{
+ const f=fixture();
+ await handleUpdate(f.message(1,'/enable'),f.env,f.fetcher,NOW-4_000_000);
+ for(let i=1001;i<=1120;i++){
+   await handleUpdate(f.message(i,'Непрерывная переписка про доставку '+i),f.env,f.fetcher,NOW-2000000+i*1000);
+ }
+ let called=0;
+ const throttled=async(url,options)=>{
+   if(String(url).includes('groq.com')){
+     called++;
+     if(called===2)return Response.json({error:'limit'},{status:429,headers:{
+       'retry-after':'130','x-ratelimit-remaining-tokens':'0',
+       'x-ratelimit-reset-tokens':'2m'
+     }});
+   }
+   return f.fetcher(url,options);
+ };
+ assert.equal(await publishDigest(f.env,'-100123',NOW,throttled),'waiting');
+ assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,40);
+ const after=called;
+ assert.equal(await publishDigest(f.env,'-100123',NOW+1000,throttled),'waiting');
+ assert.equal(called,after,'cooldown must prevent a second HTTP call');
+ f.sqlite.prepare('UPDATE groq_budget SET next_attempt_at=0,remaining_tokens=NULL,remaining_requests=NULL').run();
+ let state='processing',attempts=0;
+ do{
+   state=await publishDigest(f.env,'-100123',NOW+(attempts+3)*60000,throttled);
+   attempts++;
+   assert.ok(attempts<8);
+ }while(state==='processing');
+ assert.equal(state,'sent');
+ const chunks=f.query('SELECT processed,ids_json FROM digest_chunks ORDER BY chunk_no');
+ assert.equal(chunks.reduce((sum,c)=>sum+c.processed,0),120);
+ const ids=chunks.flatMap(c=>JSON.parse(c.ids_json));
+ assert.equal(new Set(ids).size,120);
+ assert.equal(ids.length,120);
+});
