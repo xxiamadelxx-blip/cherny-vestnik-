@@ -90,3 +90,7 @@ Nine of nine technical checks passed. Exactly 300 fictitious messages were inser
 - **PENDING** real Telegram group delivery; no group messages used so far.
 
 No claim of unlimited free throughput: long messages and Groq RPM/TPM/TPD quotas can delay the daily digest. The Worker keeps the incomplete publication pending instead of sampling down to 85.
+
+- **PASS** Full Telegram 4096-character preservation and 30/30 tests: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39610037489
+- **PASS** latest Cloudflare deploy and D1 migration: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39610030156
+- Full Telegram 4096-character preservation; chat media/voice audio is outside the current text-only contract.
