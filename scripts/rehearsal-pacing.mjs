@@ -1,6 +1,6 @@
 // CI rehearsal pacing, separate from production Worker scheduling.
 // Every loop preserves the in-memory DB and already analyzed message chunks.
-export function rehearsalDelayMs(outcome,budget,now=Date.now(),maxPauseMs=120_000) {
+export function rehearsalDelayMs(outcome,budget,now=Date.now(),maxPauseMs=8*60_000) {
   if(outcome==='processing')return 31_000;
   if(outcome!=='waiting')return 0;
   const retryAt=Number(budget?.next_attempt_at||0);
