@@ -5,7 +5,7 @@ import {
 import {createDigest,analyzeChunk,composeDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
-import {verifyPublishedDigest} from './evidence.js';
+import {verifyPublishedDigest,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.1';
@@ -222,6 +222,13 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       await run(db, 'DELETE FROM digest_reductions WHERE chat_id=? AND local_day=?',chatId,day);
       await run(db, 'DELETE FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,day);
       await run(db, "DELETE FROM digests WHERE chat_id=? AND local_day=? AND status!='sent'",chatId,day);
+    }
+    if (err instanceof EvidenceValidationError) {
+      // Bad citations must never be published, but retrying every minute would
+      // waste the free Groq quota. Wait before requesting another editorial draft.
+      await run(db, `UPDATE digests SET lease_until=?,status='pending',updated_at=?
+        WHERE chat_id=? AND local_day=? AND status!='sent'`,now+15*60_000,now,chatId,day);
+      throw err;
     }
     await run(db, `UPDATE digests SET lease_until=0,status='pending',updated_at=?
       WHERE chat_id=? AND local_day=? AND status!='sent'`, now,chatId,day);
