@@ -111,3 +111,21 @@ test('Telegram webhook registration stops on permanent 401, no automatic retries
  }),/HTTP 401/);
  assert.equal(attempts,1);
 });
+
+
+test('Telegram reports transient Cloudflare DNS failure as HTTP 400; retry rather than treating it as invalid key',async()=>{
+ const waits=[];let calls=0;
+ const result=await setTelegramWebhook({
+   url:'https://cherny-vestnik.example.workers.dev',
+   token:'fake-token',secret:'2'.repeat(48),wait:async ms=>{waits.push(ms)},
+   fetcher:async()=>{
+     calls++;
+     return calls<3?Response.json({
+       ok:false,description:'Bad Request: bad webhook: Failed to resolve host: Temporary failure in name resolution'
+     },{status:400}):Response.json({ok:true,result:true});
+   }
+ });
+ assert.equal(result,true);
+ assert.equal(calls,3);
+ assert.deepEqual(waits,[2000,4000]);
+});
