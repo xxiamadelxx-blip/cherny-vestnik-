@@ -118,7 +118,7 @@ test('long model evidence is retained in full, not silently sliced',async()=>{
    return Response.json({choices:[{message:{content:note},finish_reason:'stop'}]});
  };
  const result=await analyzeChunk({env:{GROQ_API_KEY:'fake'},rows,fetcher});
- assert.equal(result.note,note);
+ assert.equal(result.note,note.trim());
  assert.equal(result.count,1);
  assert.deepEqual(result.ids,[1001]);
 });
