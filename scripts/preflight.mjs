@@ -1,3 +1,4 @@
+// Re-run on repository secret setup: live read-only checks of Telegram, Groq and Cloudflare; no Telegram messages posted.
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
