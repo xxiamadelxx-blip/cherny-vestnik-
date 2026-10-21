@@ -23,5 +23,10 @@ jobs:
           node-version: '22'
       - name: Static syntax and simulated tests
         run: npm run check && npm test
+      - name: Verify Cloudflare Worker bundles without publishing
+        run: |
+          npm install --no-audit --no-fund
+          node -e "const fs=require('node:fs'); const path='wrangler.jsonc'; const c=JSON.parse(fs.readFileSync(path)); c.d1_databases[0].database_id='00000000-0000-4000-8000-000000000001'; fs.writeFileSync(path, JSON.stringify(c));"
+          npx wrangler deploy --dry-run --outdir .wrangler-preflight
       - name: Validate actual Telegram Groq and Cloudflare credentials
         run: node scripts/preflight.mjs
