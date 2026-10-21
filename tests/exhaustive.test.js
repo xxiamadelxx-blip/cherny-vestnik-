@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {handleUpdate,publishDigest,runCron} from '../src/index.js';
 import {packTranscript,normalizeMessage} from '../src/core.js';
-import {analyzeChunk} from '../src/ai.js';
+import {analyzeChunk,composeDigest} from '../src/ai.js';
 
 const NOW=Date.UTC(2026,9,21,18,0);
 function fixture(total=1000) {
@@ -121,4 +121,28 @@ test('long model evidence is retained in full, not silently sliced',async()=>{
  assert.equal(result.note,note.trim());
  assert.equal(result.count,1);
  assert.deepEqual(result.ids,[1001]);
+});
+
+test('hierarchical evidence merging fits a token-constrained model request',async()=>{
+  const notes=Array.from({length:25},(_,i)=>({
+    note:'[#'+(1000+i)+'] Актёр: '+('свидетельство о споре и последствиях. '.repeat(90)),
+    ids:[1000+i]
+  }));
+  let reductionCalls=0, finalCalls=0;
+  const fetcher=async(_url,opts)=>{
+    const request=JSON.parse(opts.body);
+    const prompt=request.messages.at(-1).content;
+    if(prompt.length>9500) return Response.json({error:'synthetic oversized request'},{status:413});
+    if(request.messages[0].content.includes('Сжать доказанные события')){
+      reductionCalls++;
+      return Response.json({choices:[{message:{content:'[#1000] Актёр: спорил о цене; ['+'#1001] Друг: отметил противоречие и последствия.'},finish_reason:'stop'}]});
+    }
+    finalCalls++;
+    return Response.json({choices:[{message:{content:'💀 ЧЁРНЫЙ ВЕСТНИК. Сначала спорили о цене, затем снова дали заднюю. Это был ёбаный цирк, а оправдания оказались ещё смешнее решений.'},finish_reason:'stop'}]});
+  };
+  const result=await composeDigest({env:{GROQ_API_KEY:'test'},day:'2026-10-21',
+    total:1000,notes,fetcher});
+  assert.ok(reductionCalls>1);
+  assert.equal(finalCalls,1);
+  assert.match(result.body,/ЧЁРНЫЙ ВЕСТНИК/);
 });
