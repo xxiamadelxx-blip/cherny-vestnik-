@@ -2,10 +2,10 @@ import {
   ONE_DAY_MS, MESSAGE_RETENTION_MS, MEMORY_RETENTION_MS, localClock,
   scheduledDue, normalizeMessage, splitTelegramText, packTranscript
 } from './core.js';
-import {createDigest,analyzeChunk,composeDigest} from './ai.js';
+import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
-import {verifyPublishedDigest,EvidenceValidationError} from './evidence.js';
+import {verifyPublishedDigest,verifyEditorialEvidence,fetchCitedMessages,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.1';
@@ -149,6 +149,8 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
     };
     let job = await row(db, 'SELECT * FROM digests WHERE chat_id=? AND local_day=?', chatId, day);
     if (!job.body) {
+      let body=job.editorial_draft||null;
+      if(!body){
       const prev = await row(db, `SELECT MAX(window_end) AS last_end FROM digests
         WHERE chat_id=? AND status='sent' AND local_day!=?`, chatId, day);
       const start = job.window_start ?? prev?.last_end ?? now - ONE_DAY_MS;
@@ -160,7 +162,6 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       const total = Number(n?.n || 0);
       const smallRows = total>0 && total<=40 ? await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
         WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end) : [];
-      let body;
       if (total === 0) {
         body = `💀 ЧЁРНЫЙ ВЕСТНИК | ${day}\n\nСегодня в чате тишина. Кажется, здравый смысл наконец-то победил. Или все просто спят, блядь.`;
       } else if (total <= 40 && packTranscript(smallRows).count === total) {
@@ -197,12 +198,32 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         body=(await composeDigest({env,day,total,notes:chunks.map(c=>({note:c.note,ids:JSON.parse(c.ids_json)})),previous,fetcher,chatId,checkConsent})).body;
         body += `\n\n📊 Прочитано и обработано: ${processed} из ${total} сообщений.`;
       }
+      // Unaccepted first draft is durable; a 429 in fact-checking will not
+      // trigger a second first-draft Groq completion after quota reset.
       await checkConsent();
-      // Reject invented citations or misquoted participants before ANY Telegram send.
-      // The source query is bounded by the cited IDs, not the total chat size.
-      if(total>0) await verifyPublishedDigest({db,chatId,body});
+      await run(db, 'UPDATE digests SET editorial_draft=?,updated_at=? WHERE chat_id=? AND local_day=?',
+        body,now,chatId,day);
+      }
       await checkConsent();
-      await run(db, `UPDATE digests SET body=?,status='working',updated_at=?
+      // Guard every reference and verbatim quote with the original cited rows.
+      // The query is bounded by actual citation IDs, not whole-day message count.
+      const citedRows=await fetchCitedMessages({db,chatId,body});
+      try {
+        verifyEditorialEvidence(body,citedRows);
+      } catch (err) {
+        if(!(err instanceof EvidenceValidationError))throw err;
+        // One automatic rewrite with original evidence, then audit again.
+        // On a 429, the unaccepted draft above is kept for next Cron.
+        const revised=await reviseDigest({env,day,draft:body,citedRows,fetcher});
+        const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
+        body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
+        await checkConsent();
+        await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
+          body,now,chatId,day);
+        await verifyPublishedDigest({db,chatId,body});
+      }
+      await checkConsent();
+      await run(db, `UPDATE digests SET body=?,editorial_draft=NULL,status='working',updated_at=?
         WHERE chat_id=? AND local_day=?`, body,now,chatId,day);
       job = {...job, body, next_part:0};
     }
