@@ -20,5 +20,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate deployed Worker and Telegram webhook (no group required)
+      - name: Verify exact v0.2.2 Worker version, Telegram webhook and forged-update protection
         run: node scripts/smoke.mjs
