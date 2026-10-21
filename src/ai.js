@@ -29,7 +29,7 @@ export async function createDigest({env, day, total, rows, previous, fetcher = f
     body: JSON.stringify({
       model: env.GROQ_MODEL || 'qwen/qwen3.8-27b',
       messages:[{role:'system', content:systemPrompt()}, {role:'user', content}],
-      temperature:0.8, max_completion_tokens:1100, reasoning_effort:'none'
+      temperature:0.55, max_completion_tokens:1800, reasoning_effort:'none'
     }), signal:AbortSignal.timeout(45000)
   });
   if (!res.ok) throw new Error(`Groq HTTP ${res.status}`);
