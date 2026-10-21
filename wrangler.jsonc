@@ -6,7 +6,9 @@
   "triggers": {"crons": ["* * * * *"]},
   "vars": {
     "GROQ_MODEL": "qwen/qwen3.8-27b",
-    "BOT_TIME_ZONE": "Europe/Moscow"
+    "BOT_TIME_ZONE": "Europe/Moscow",
+    "GROQ_DAILY_TOKEN_SOFT_LIMIT": "180000",
+    "GROQ_TOKEN_RESERVE": "3500"
   },
   "d1_databases": [{
     "binding": "DB",
