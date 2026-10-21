@@ -182,3 +182,20 @@ test('explicit wrong speaker by name and source ID is rejected even for exact qu
   EvidenceValidationError);
  assert.doesNotThrow(()=>verifyEditorialEvidence('Марта ответила: «Я отказалась от кофе.» [#42]',sample));
 });
+
+
+test('Groq source ID before quote is checked; inflected phrase is repaired from exact Telegram message',()=>{
+  const originals=[{message_id:1001,display_name:'Саня',body:'Ребят, кофемашину за сорок тысяч не куплю. Бессмысленная трата.'}];
+  const draft='Саня в [#1001] заявил, что это «бессмысленной тратой».';
+  assert.throws(()=>verifyEditorialEvidence(draft,originals),
+    err=>err instanceof EvidenceValidationError&&/source ID/.test(err.message));
+  const repaired=correctNearMissQuotes(draft,originals);
+  assert.match(repaired,/«Бессмысленная трата»/);
+  assert.equal(verifyEditorialEvidence(repaired,originals).quotesChecked,1);
+});
+test('a real quote after its citation counts as checked, but editorial headline quotes do not',()=>{
+  const original=[{message_id:1009,display_name:'Дима',body:'Да, сказал, что дождь через час. ИИ редко ошибается.'}];
+  const newspaper='Номинация «Чайник-метеоролог»: Дима в [#1009] утверждал «дождь через час».';
+  assert.equal(verifyEditorialEvidence(newspaper,original).quotesChecked,1);
+  assert.deepEqual(verifyEditorialEvidence('«Чайник-метеоролог» вообще звучит смешно.',original),{cited:0,quotesChecked:0});
+});
