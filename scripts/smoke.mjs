@@ -1,7 +1,6 @@
 import {resolve} from 'node:path';
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
-import {readFileSync} from 'node:fs';
 
 // This smoke test uses ONLY read-only Telegram and Cloudflare API calls and an
 // unauthorized request to the Worker. It never processes or sends group messages.
