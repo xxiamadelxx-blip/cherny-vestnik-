@@ -2,7 +2,29 @@
 
 Самостоятельный Telegram-бот: каждый вечер он делает из переписки группы едкую сатирическую газету с матом. Без платной подписки, без своего постоянно работающего сервера, с опорой на реальные сообщения и возможностью отказаться от сбора данных.
 
-**Версия:** MVP 0.1.0 (21 октября 2026). **Статус:** исходники и автоматизированные тесты готовы; для реальной публикации требуется привязать личные Telegram, Groq и Cloudflare. Демонстрационный AI-ответ в тестах является mock, не настоящим вызовом Groq.
+**Версия:** MVP 0.1.1 (21 октября 2026). **Статус:** исходники и автоматизированные тесты готовы; для реальной публикации требуется привязать личные Telegram, Groq и Cloudflare. Демонстрационный AI-ответ в тестах является mock, не настоящим вызовом Groq.
+
+## Быстрый запуск без компьютера через GitHub Actions
+
+Основной репозиторий: https://github.com/xxiamadelxx-blip/cherny-vestnik-
+
+1. Создайте Telegram-бота у [@BotFather](https://t.me/BotFather) (`/newbot`); отключите ему Privacy Mode (`/setprivacy` → Disable). Токен никому не отправляйте.
+2. Зарегистрируйте бесплатные Cloudflare и Groq аккаунты. Получите [Cloudflare API Token](https://dash.cloudflare.com/profile/api-tokens) с разрешениями Workers Scripts Edit и D1 Edit, [Cloudflare Account ID](https://dash.cloudflare.com/) и [Groq API key](https://console.groq.com/keys).
+3. Откройте **GitHub → репозиторий → Settings → Secrets and variables → Actions → New repository secret**. Создайте **четыре** секрета:
+   - `CLOUDFLARE_API_TOKEN` (API Token Cloudflare)
+   - `CLOUDFLARE_ACCOUNT_ID` (Account ID Cloudflare)
+   - `TELEGRAM_BOT_TOKEN` (токен от BotFather)
+   - `GROQ_API_KEY` (API key Groq)
+4. Откройте [Actions → Deploy Telegram bot on Cloudflare Free](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/workflows/deploy.yml) → **Run workflow**. Скрипты автоматически находят/создают D1, применяют SQL, публикуют Worker, задают Worker Secrets и регистрируют Telegram webhook. Секрет webhook генерируется автоматически на каждом развёртывании и не хранится в GitHub.
+5. Добавьте бота в группу, предупредите участников о том, что сообщения будут кратковременно сохраняться и отправляться в Groq; затем от имени администратора выполните `/enable` и `/now` после пары сообщений.
+
+Проверка реального запуска: последняя стадия workflow должна отчитаться `Bot deployed and webhook registered` с `workers.dev` URL; далее в Telegram проверяется `/status`, затем публикация `/now`. **Без четырёх GitHub Secrets автоматическое развёртывание не запустится.** Пароли, токены и содержимое переписки нельзя публиковать в репозитории.
+
+**Права бота**: в группе нужны получение новых сообщений и возможность отвечать. Privacy Mode отключается через BotFather. Само наличие кода в GitHub не означает, что бот работает в Telegram.
+
+### Запуск вручную
+
+В случае ограничений GitHub Actions можно выполнить `npm install`, `node scripts/provision-d1.mjs`, `npx wrangler d1 migrations apply cherny-vestnik --remote --yes`, `npx wrangler deploy` и `node scripts/activate-cloudflare.mjs` в GitHub Codespaces с теми же переменными окружения. Другая настройка конфигурации D1 UUID не требуется.
 
 ## Что уже работает в коде
 
@@ -25,69 +47,9 @@
 
 Скрипт JavaScript ESM без runtime-зависимостей, база D1 (SQLite), тесты Node.js 22 с встроенным `node:sqlite`. Не нужен ПК, Docker или собственный VPS. Проект рассчитан на одну/несколько небольших групп, а не на массовый коммерческий сервис.
 
-## Подключение с телефона через GitHub Codespaces и Cloudflare
+## Руководство по развёртыванию
 
-### 1. Создать Telegram-бота
-
-1. Откройте [@BotFather](https://t.me/BotFather), `/newbot`, получите **токен**, никому его не присылайте.
-2. У BotFather выберите `/setprivacy` → новый бот → **Disable**, иначе бот не увидит обычную переписку.
-3. Добавьте бота в Telegram-группу администратором (нужен `getChatMember` для команд и получение групповых сообщений; не давайте права, которые не нужны).
-4. Создайте API key в [Groq Console](https://console.groq.com/keys). Бесплатный план и доступная модель могут иметь ограничения и меняться.
-
-### 2. Разместить код в своём GitHub
-
-Создайте пустой репозиторий `cherny-vestnik` (публичный репозиторий упрощает GitHub Actions). Через браузер [GitHub Codespaces](https://github.com/codespaces) создайте среду для репозитория, загрузите архив проекта, извлеките файлы и выполните:
-
-```bash
-unzip cherny-vestnik.zip -d extracted
-cp -a extracted/cherny-vestnik/. .
-npm test
-git add . && git commit -m 'Create daily roast digest bot' && git push
-```
-
-Команды нужны **в облачном терминале Codespaces**, не на вашем телефоне. Бесплатная квота Codespaces зависит от аккаунта; это подготовительный инструмент, а не постоянно работающий сервер бота.
-
-### 3. Создать Cloudflare D1
-
-1. Создайте бесплатную учётную запись [Cloudflare](https://dash.cloudflare.com/).
-2. В разделе **Workers & Pages → D1** создайте базу с именем `cherny-vestnik` (меню может называться иначе).
-3. Скопируйте **database UUID** и замените `REPLACE_WITH_D1_DATABASE_UUID` в `wrangler.jsonc`. Зафиксируйте изменение в GitHub.
-4. В Cloudflare создайте API token с минимально необходимыми правами на Workers Scripts и D1, получите Cloudflare account ID.
-5. В **GitHub repo → Settings → Secrets and variables → Actions** заведите два секрета: `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`.
-6. В **Actions → Deploy Cloudflare Worker → Run workflow** запустите публикацию. Workflow проверит тесты, применит миграцию D1 и загрузит Worker. Адрес будет вида `https://cherny-vestnik.<subdomain>.workers.dev`.
-
-Проверить `GET https://...workers.dev/healthz`: должен вернуться JSON `{"ok":true,"version":"0.1.0"}`.
-
-### 4. Добавить секреты в Worker
-
-В Cloudflare откройте настройки опубликованного Worker → **Variables and Secrets**. Добавьте именно **Secret**, не публичную переменную:
-
-- `TELEGRAM_BOT_TOKEN` = токен нового бота из BotFather.
-- `GROQ_API_KEY` = API key из Groq Console.
-- `TELEGRAM_WEBHOOK_SECRET` = случайная строка `[A-Za-z0-9_-]` длиной от 24 символов. Например, через Codespaces `openssl rand -hex 24`, но **не используйте строку из этого документа**.
-
-Секреты должны совпадать при регистрации webhook (следующий шаг). Никогда не фиксируйте их в GitHub и не отправляйте в чат.
-
-### 5. Зарегистрировать Telegram webhook
-
-В том же облачном терминале Codespaces используйте ввод токенов без отображения на экране:
-
-```bash
-read -rsp 'Bot token: ' TELEGRAM_BOT_TOKEN; echo; export TELEGRAM_BOT_TOKEN
-read -rsp 'Webhook secret: ' TELEGRAM_WEBHOOK_SECRET; echo; export TELEGRAM_WEBHOOK_SECRET
-export WORKER_URL='https://cherny-vestnik.YOUR_SUBDOMAIN.workers.dev'
-node scripts/register-webhook.mjs
-unset TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET
-```
-
-Замени `WORKER_URL` своим адресом, выданным Cloudflare. Бот автоматически начнёт получать **новые** сообщения после подключения webhook.
-
-### 6. Включить в своей Telegram-группе
-
-1. Предупредите участников, что бот сохраняет сообщения и отправляет выдержки внешнему AI-провайдеру Groq для дневного обзора.
-2. Администратор пишет `/enable`, затем по желанию `/time 21:00`.
-3. Участники общаются. Администратор пишет `/now`, чтобы проверить первый выпуск сразу. Учтите: команда `/now` занимает дневную квоту публикации, следующий автоматический выпуск будет **завтра**.
-4. `/status` покажет состояние. `/forgetme` позволяет участнику удалить свои сохранённые сообщения и запретить будущий сбор; `/wipe` полностью удаляет сохранённое для группы.
+Для автоматического запуска используйте раздел «Быстрый запуск» выше. Он заменяет старую ручную процедуру Cloudflare D1 + webhook. Новые запуски в GitHub Actions повторно используют существующую базу D1, не сбрасывая сохранённую переписку.
 
 ## Как запустить автоматизированные тесты
 
@@ -126,7 +88,7 @@ npm run test:coverage
 - `src/core.js`: очистка, выборка, часы, разделение текста, fallback.
 - `src/telegram.js`: Telegram API с проверкой ошибок.
 - `migrations/0001_init.sql`: схема данных.
-- `tests/`: автоматизированные модульные и интеграционные проверки.
+- `tests/`: 20 автоматизированных проверок, включая bootstrap Cloudflare.
 - `.github/workflows/test.yml`: CI тестирование.
 - `.github/workflows/deploy.yml`: ручной облачный деплой.
 
