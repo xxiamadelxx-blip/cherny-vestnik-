@@ -33,6 +33,14 @@ export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms
           .replaceAll(token,'[token]').replaceAll(secret,'[secret]').replaceAll(url,'[worker]')
           .replace(/https?:\/\/[^\s]+/g,'[url]')
           .slice(0,180);
+        if(result.status===400 && /failed to resolve host|temporary failure in name resolution|dns lookup/i.test(description)) {
+          // Telegram occasionally cannot resolve Cloudflare workers.dev from its
+          // own DNS, even though the Worker is live on the public Internet.
+          // Telegram reports this transient infrastructure issue as HTTP 400.
+          if(attempt===3)break;
+          await wait(2000*2**attempt);
+          continue;
+        }
         throw new Error('Telegram setWebhook rejected request (HTTP '+result.status+'): '+description);
       }
       if(attempt===3)break;
