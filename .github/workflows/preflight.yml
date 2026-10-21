@@ -1,10 +1,6 @@
 name: Preflight real Telegram Groq Cloudflare
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/preflight.yml'
-      - 'scripts/preflight.mjs'
 permissions:
   contents: read
 jobs:
