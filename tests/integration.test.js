@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import worker,{handleUpdate,runCron,publishDigest} from '../src/index.js';
+import {noteGroqLimit} from '../src/quota.js';
 
 const NOW=Date.UTC(2026,9,21,18,0); // 21:00 Moscow
 const SCHEMA=readFileSync(new URL('../migrations/0001_init.sql',import.meta.url),'utf8');
@@ -200,4 +201,29 @@ test('multipart digest retries from next part, not from beginning',async()=>{
   assert.equal(f.groqCalls,1);
   assert.equal(f.sent.filter(x=>x.text===firstPart).length,1);
   assert.ok(f.sent.every(x=>x.text.length<=3800));
+});
+
+test('status exposes Groq cooldown and incomplete processing count',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  for(let id=101;id<=200;id++){
+    await handleUpdate(f.makeMsg({id,text:'Чат спорит о доставке и расписании '+id}),f.env,f.fetcher,NOW-300000);
+  }
+  assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'processing');
+  await noteGroqLimit(f.env,new Response('',{status:429,headers:{'retry-after':'130'}}),Date.now());
+  await handleUpdate(f.makeMsg({id:2,text:'/status'}),f.env,f.fetcher,NOW+1000);
+  const status=f.sent.at(-1).text;
+  assert.match(status,/Groq: пауза/);
+  assert.match(status,/Обработка 2026-10-21: 80\/100 сообщений/);
+  assert.match(status,/Токены бота сегодня/);
+});
+
+test('privacy wipe clears cached Groq reduction notes',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  f.sqlite.prepare('INSERT INTO digest_reductions(chat_id,local_day,level,group_no,input_hash,note,updated_at) VALUES(?,?,?,?,?,?,?)')
+    .run('-1001111','2026-10-21',0,0,'hash','saved note',NOW);
+  assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_reductions')[0].n,1);
+  await handleUpdate(f.makeMsg({id:5,text:'/wipe'}),f.env,f.fetcher,NOW);
+  assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_reductions')[0].n,0);
 });
