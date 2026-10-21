@@ -59,6 +59,29 @@ export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms
   throw new Error('Telegram setWebhook failed after four attempts (last HTTP '+status+'): '+lastReason);
 }
 
+
+export async function deleteTelegramWebhook({fetcher=fetch,token,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+  let status=0;
+  for(let attempt=0;attempt<4;attempt++){
+    try{
+      const response=await fetcher('https://api.telegram.org/bot'+token+'/deleteWebhook',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({drop_pending_updates:false}),signal:AbortSignal.timeout(16000)
+      });
+      status=response.status;
+      const result=await response.json();
+      if(response.ok&&result?.ok===true)return true;
+      if(response.status!==429&&response.status<500)
+        throw Error('Telegram deleteWebhook rejected request (HTTP '+response.status+')');
+    }catch(err){
+      if(/deleteWebhook rejected request/.test(String(err)))throw err;
+      if(attempt===3)break;
+    }
+    if(attempt!==3)await wait(700*2**attempt);
+  }
+  throw Error('Telegram deleteWebhook failed after four attempts (last HTTP '+status+')');
+}
+
 export async function activate({env = process.env, fetcher = fetch, putSecret = null}) {
   const required = ['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TELEGRAM_BOT_TOKEN','GROQ_API_KEY'];
   for (const key of required) if (!env[key]?.trim()) throw new Error(`Missing GitHub Actions secret: ${key}`);
@@ -88,11 +111,17 @@ export async function activate({env = process.env, fetcher = fetch, putSecret = 
   const url = `https://cherny-vestnik.${result.subdomain}.workers.dev`;
   const health = await fetcher(url + '/healthz');
   if (!health.ok) throw new Error(`Deployed Worker health check failed: HTTP ${health.status}`);
+  if(env.TELEGRAM_TRANSPORT==='polling'){
+    // Telegram-side DNS cannot consistently resolve workers.dev. Disabling the
+    // webhook is required for getUpdates to work. Preserve queued messages.
+    await deleteTelegramWebhook({fetcher,token:env.TELEGRAM_BOT_TOKEN});
+    return {url,webhookConfigured:false,polling:true};
+  }
   await setTelegramWebhook({fetcher,url,token:env.TELEGRAM_BOT_TOKEN,secret:webhookSecret});
-  return {url, webhookConfigured: true};
+  return {url,webhookConfigured:true,polling:false};
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  activate({}).then(result => console.log(`Bot deployed and webhook registered: ${result.url}`))
+  activate({}).then(result => console.log(result.polling?`Bot deployed in DNS-independent Telegram polling mode: ${result.url}`:`Bot deployed and webhook registered: ${result.url}`))
     .catch(error => {console.error(String(error.message)); process.exitCode = 1;});
 }
