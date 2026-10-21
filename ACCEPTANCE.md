@@ -70,3 +70,9 @@
 - Check AI output quality and factual citation against real messages; adjust satire accordingly.
 
 **Release state:** Cloud infrastructure + real credentials + live webhook smoke PASS. End-to-end chat publication pending. Never publish GitHub Secrets or token values.
+
+## 300-message simulated Groq run
+
+Run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39603399368
+
+Nine of nine technical checks passed. Exactly 300 fictitious messages were inserted, 85 of them were sampled, real Groq produced a 1600-character report. Telegram delivery was mocked and no real group was involved. Full transcript and report are in reports/simulation-300-chat.json and reports/simulation-300.md. Editorial factuality and exhaustive coverage are not accepted yet; model paraphrases still need human review.
