@@ -17,7 +17,7 @@ function fixture(){
     run:async()=>({meta:{changes:st.run(...args).changes}})
   };}};}};
   const env={DB,TELEGRAM_BOT_TOKEN:'mock',GROQ_API_KEY:'mock',
-    TELEGRAM_TRANSPORT:'polling',TELEGRAM_POLL_BATCH:'40',BOT_TIME_ZONE:'Europe/Moscow'};
+    TELEGRAM_TRANSPORT:'polling',TELEGRAM_POLL_BATCH:'40',TELEGRAM_POLL_PAGES:'1',BOT_TIME_ZONE:'Europe/Moscow'};
   const delivered=[],updates=Array.from({length:95},(_,i)=>({
     update_id:i+1000,
     message:{message_id:i+101,date:Math.floor((NOW-30*60_000)/1000),
@@ -62,15 +62,18 @@ test('95 queued messages are ALL ingested before the daily issue starts',async()
   assert.deepEqual(await runCron(f.env,NOW+60_000,f.fetcher),[]);
   assert.equal(f.count(),80);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0);
-  const result=await runCron(f.env,NOW+120_000,f.fetcher);
+  // A short page containing 15 events is not proof that nothing else remains.
+  assert.deepEqual(await runCron(f.env,NOW+120_000,f.fetcher),[]);
   assert.equal(f.count(),95);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0);
+  const result=await runCron(f.env,NOW+180_000,f.fetcher);
   assert.equal(result[0].result,'processing','complete set enters the AI pipeline');
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,1);
   const records=f.sqlite.prepare('SELECT window_start,window_end FROM digests').get();
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM messages WHERE posted_at>=? AND posted_at<?')
     .get(records.window_start,records.window_end).n,95);
   assert.equal(f.sqlite.prepare('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks').get().n,80);
-  assert.equal(f.pollCalls,3);
+  assert.equal(f.pollCalls,4);
   assert.ok(f.delivered.every(text=>!text.includes('ЧЁРНЫЙ ВЕСТНИК')),
     'no partial Telegram newspaper sent');
 });
@@ -91,5 +94,43 @@ test('an existing Telegram poll lease postpones digest publication',async()=>{
   f.sqlite.prepare('UPDATE telegram_poller SET lease_until=?').run(NOW+120000);
   assert.deepEqual(await runCron(f.env,NOW,f.fetcher),[]);
   assert.equal(f.pollCalls,0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0);
+});
+
+
+test('four-page catch-up safely drains 95 queued messages in one Cron invocation',async()=>{
+  const f=fixture();
+  f.env.TELEGRAM_POLL_PAGES='4';
+  await handleUpdate(f.adminMessage,f.env,f.fetcher,NOW-40*60_000);
+  const result=await runCron(f.env,NOW,f.fetcher);
+  assert.equal(f.pollCalls,4,'40 + 40 + 15 + confirmed empty page');
+  assert.equal(f.count(),95);
+  assert.equal(result[0].result,'processing');
+  const snapshot=f.sqlite.prepare('SELECT window_start,window_end FROM digests').get();
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM messages WHERE posted_at>=? AND posted_at<?')
+    .get(snapshot.window_start,snapshot.window_end).n,95);
+});
+test('a deliberately short Telegram page cannot masquerade as an empty queue',async()=>{
+  const f=fixture();
+  let calls=0;
+  f.env.TELEGRAM_POLL_PAGES='2';
+  await handleUpdate(f.adminMessage,f.env,f.fetcher,NOW-40*60_000);
+  const partial=async(url,options)=>{
+    if(String(url).endsWith('/getUpdates')){
+      calls++;
+      if(calls===1)return Response.json({ok:true,result:[{
+        update_id:1000,
+        message:{message_id:101,date:Math.floor((NOW-1800000)/1000),
+          chat:{id:-100999,type:'supergroup',title:'Fictional'},
+          from:{id:1,first_name:'Вася'},text:'Сначала первая реплика'}
+      }]});
+      // Temporary error while fetching the next page. Not evidence of empty queue.
+      return Response.json({ok:false},{status:503});
+    }
+    return f.fetcher(url,options);
+  };
+  assert.deepEqual(await runCron(f.env,NOW,partial),[]);
+  assert.equal(calls,2,'must request another page after a short nonempty response');
+  assert.equal(f.count(),1);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) AS n FROM digests').get().n,0);
 });
