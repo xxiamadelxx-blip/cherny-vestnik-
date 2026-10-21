@@ -52,6 +52,32 @@ export function verifyNoFabricatedScenes(body,sourceRows){
   return true;
 }
 
+
+// A quote may be verbatim yet still be falsely attributed to another person.
+// Match an explicit "Person said ...: «literal» [#ID]" construction. Constrain
+// the span to exclude other proper names, to avoid guessing narrators.
+const NARRATED_SPEECH=/(?<![\p{L}])([А-ЯЁ][\p{L}]{2,20})\s+(?:(?:сухо|торжественно|вслух|потом|снова|тут\s+же)\s+){0,2}(?:подытожил[а]?|резюмировал[а]?|сказал[а]?|написал[а]?|заявил[а]?|выдал[а]?|спросил[а]?|ответил[а]?|воскликнул[а]?|гаркнул[а]?|напомнил[а]?|признал[а]?|заметил[а]?|поинтересовал[а]сь|отметил[а]?|уточнил[а]?)\s*[^А-ЯЁ.!?\n«»“"]{0,75}[«“"]([^»”"\n]{3,350})[»”"]\s*[,.!?;:]?\s*\[#(\d+)\]/gu;
+const LETTER_LOOKALIKE={a:'а',e:'е',o:'о',p:'р',c:'с',x:'х',y:'у',k:'к',m:'м',h:'н',b:'в',t:'т'};
+function normalizedPerson(value) {
+  const token=String(value??'').split(/\s+/)[0];
+  const normalizedMixed=/[а-яё]/iu.test(token)?token.replace(/[aeopcxykmhbt]/g,c=>LETTER_LOOKALIKE[c]||c):token;
+  return normalizedMixed.toLocaleLowerCase('ru-RU');
+}
+export function verifyNarratedQuoteAttribution(body,sourceRows) {
+  const speakers=new Map(sourceRows.map(row=>[Number(row.message_id),normalizedPerson(row.display_name)]));
+  const known=new Set(speakers.values());
+  let checked=0;
+  for(const match of String(body??'').matchAll(NARRATED_SPEECH)) {
+    const author=speakers.get(Number(match[3]));
+    const named=normalizedPerson(match[1]);
+    if(!author||!known.has(named))continue;
+    checked++;
+    if(author!==named)
+      throw new EvidenceValidationError('verbatim quote falsely attributed to another chat participant');
+  }
+  return checked;
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
@@ -76,6 +102,7 @@ export function verifyEditorialEvidence(body, sourceRows) {
     if(!row||!normalized(row.body).includes(normalized(match[1])))
       throw new EvidenceValidationError('verbatim quote does not match the cited message');
   }
+  verifyNarratedQuoteAttribution(text,sourceRows);
   verifyNoFabricatedScenes(text,sourceRows);
   return {cited:refs.length,quotesChecked:checked};
 }
