@@ -131,6 +131,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  assert.equal(outcome,'sent','live Groq did not complete the accepted digest');
  assert.equal(stored.status,'sent');
  const evidence=verifyEditorialEvidence(stored.body,source);
+ assert.ok(evidence.quotesChecked>=2,'A quote-rich 30-message newspaper must verify at least two literal citations, either before or after quoted words');
  const total=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
  assert.equal(total,30);
  assert.ok(aiCalls>=1&&aiCalls<=4,'bounded Groq calls including editorial correction');
