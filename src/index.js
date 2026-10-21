@@ -8,7 +8,7 @@ import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {verifyPublishedDigest,verifyEditorialEvidence,fetchCitedMessages,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
-const PUBLIC_VERSION = '0.2.1';
+const PUBLIC_VERSION = '0.2.2';
 
 function authorizedWebhook(request, secret) {
   const supplied = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
