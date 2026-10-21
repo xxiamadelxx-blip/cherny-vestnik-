@@ -1,4 +1,5 @@
 import {resolve} from 'node:path';
+import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 
 // This smoke test uses ONLY read-only Telegram and Cloudflare API calls and an
@@ -28,7 +29,9 @@ export async function smoke({env=process.env, fetcher=fetch, log=console.log} = 
   if (!health.ok) throw new Error('Live Worker /healthz HTTP '+health.status);
   const body=await health.json();
   if (body?.ok!==true||typeof body.version!=='string') throw new Error('Worker health payload invalid');
-  log('PASS Live Worker responds to /healthz');
+  const expectedVersion=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version;
+  if(body.version!==expectedVersion)throw new Error('Live Worker version mismatch: expected '+expectedVersion+' but found '+body.version);
+  log('PASS Live Worker /healthz version '+expectedVersion);
   const forged=await request(base+'/webhook',{
     method:'POST',
     headers:{'Content-Type':'application/json','X-Telegram-Bot-Api-Secret-Token':'invalid-smoke-token'},
