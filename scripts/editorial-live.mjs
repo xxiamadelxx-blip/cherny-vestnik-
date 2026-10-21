@@ -138,7 +138,13 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const swears=/(бляд|блят|хуй|нахуй|пиздец|ёбан|ебат|долбо)/i.test(stored.body);
  const themes=[/кофемашин|инвестиц/i,/игор|опозд|такси|ключ/i,/паша|прицел|автонавед/i,/дим|чайник|погод/i]
    .filter(re=>re.test(stored.body)).length;
- const check={ingested,aiCalls,themes,swears,
+ const correctDay=stored.body.split('\n').slice(0,2).some(line=>line.includes('21.10.2026'));
+ const unknownName=!/\b(?:Санни|Мара)\b/u.test(stored.body);
+ // The credit remark in this fixture is only Dima's joke, not proof of a loan.
+ const creditAssertion=/кредит/iu.test(stored.body) && !/Дим[а-яё]*.{0,150}кредит/isu.test(stored.body) &&
+   !/по словам Димы/iu.test(stored.body);
+ const financiallyGrounded=!creditAssertion;
+ const check={ingested,aiCalls,themes,swears,correctDay,unknownName,financiallyGrounded,
    length:stored.body.length,cited:evidence.cited,quotesVerified:evidence.quotesChecked};
  const report=[
   '# Чёрный Вестник 0.2.2: реальный редакторский Groq smoke',
@@ -158,7 +164,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  writeFileSync('reports/editorial-live.md',report);
  log('EDITORIAL LIVE: '+JSON.stringify(check));
  log('GROQ REPORT:\n'+stored.body.slice(0,5500));
- if(!swears||themes<3)throw Error('Quality gate: insufficient profanity or topic diversity');
+ if(!swears||themes<3||!correctDay||!unknownName||!financiallyGrounded)throw Error('Quality gate: unsupported credit claim, wrong name/date, or insufficient roast');
  return {report,check};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1]))
