@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -87,4 +87,37 @@ test('invented serious allegation cannot be laundered by fuzzy source quote repa
  const fixed=correctNearMissQuotes(wrong,rows);
  assert.equal(fixed,wrong);
  assert.throws(()=>verifyEditorialEvidence(fixed,rows),EvidenceValidationError);
+});
+
+
+test('malformed citation markers are normalized before strict source validation',()=>{
+ const source=[{message_id:1028,display_name:'Саня',body:'Я ещё не считал, не рушьте мне мечту.'}];
+ const malformed='Саня [, #1028] ответил, что не считал расходы.';
+ assert.throws(()=>verifyEditorialEvidence(malformed,source),EvidenceValidationError);
+ const normalized=normalizeSourceMarkers(malformed);
+ assert.equal(normalized,'Саня [#1028] ответил, что не считал расходы.');
+ assert.deepEqual(verifyEditorialEvidence(normalized,source),{cited:1,quotesChecked:0});
+ assert.equal(normalizeSourceMarkers('«Да» [# 1028]'), '«Да» [#1028]');
+});
+
+test('direct speech attribution uses the actual Telegram speaker, not another group member',()=>{
+ const data=[
+  {message_id:1008,display_name:'Марта',body:'По чайнику? Ты серьёзно, нахуй?'},
+  {message_id:1011,display_name:'Лиза',body:'Паша, ты вчера стрелял в стену десять минут.'},
+  {message_id:1010,display_name:'Паша',body:'Мне автоприцел не нужен.'}
+ ];
+ const wrong='Лиза [#1008] поинтересовалась, серьёзно ли он. Паша [#1011] в это время играл.';
+ const fixed=correctDirectSpeechAttribution(wrong,data);
+ assert.match(fixed,/Марта \[#1008\] поинтересовалась/);
+ assert.match(fixed,/Паша \[#1011\] в это время играл/);
+ assert.doesNotThrow(()=>verifyEditorialEvidence(fixed,data));
+});
+test('foreign script absent from any cited source is rejected rather than silently published',()=>{
+ const data=[{message_id:1029,display_name:'Игорь',body:'Вы уже съели всё, суки?'}];
+ assert.throws(()=>verifyEditorialEvidence('Игорь и怒吼нул: «Вы уже съели всё, суки?» [#1029]',data),
+   err=>err instanceof EvidenceValidationError && /foreign script/.test(err.message));
+ assert.deepEqual(verifyEditorialEvidence('Игорь сказал: «Вы уже съели всё, суки?» [#1029]',data),
+   {cited:1,quotesChecked:1});
+ const chinese=[{message_id:7,display_name:'Ли',body:'Я написал 怒吼 специально.'}];
+ assert.doesNotThrow(()=>verifyEditorialEvidence('В сообщении было 怒吼 [#7]',chinese));
 });
