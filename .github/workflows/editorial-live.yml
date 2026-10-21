@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# Second live editorial verification after factual attribution and originality fixes.
+# Third live editorial verification with affirmative punchline style.
 on:
   workflow_dispatch:
   push:
