@@ -1,0 +1,44 @@
+name: Live 1000 Message Groq Rehearsal
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/simulation-1000.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests including 1000 message no-drop proof
+        run: npm test
+      - name: Process 1000 synthetic messages through actual Groq
+        run: node scripts/simulate-1000.mjs
+      - name: Archive generated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-1000-groq-proof
+          path: |
+            reports/simulation-1000.md
+            reports/simulation-1000-chat.json
+          if-no-files-found: warn
+      - name: Publish real Groq simulation report
+        if: success()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/simulation-1000.md reports/simulation-1000-chat.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'test: save full 1000-message Groq evidence'
+            git push origin HEAD:main
+          fi
