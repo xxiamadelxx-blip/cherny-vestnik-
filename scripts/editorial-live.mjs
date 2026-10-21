@@ -139,7 +139,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const themes=[/кофемашин|инвестиц/i,/игор|опозд|такси|ключ/i,/паша|прицел|автонавед/i,/дим|чайник|погод/i]
    .filter(re=>re.test(stored.body)).length;
  const correctDay=stored.body.split('\n').slice(0,2).some(line=>line.includes('21.10.2026'));
- const unknownName=!/\b(?:Санни|Мара)\b/u.test(stored.body);
+ const unknownName=!/(?<![\p{L}])(?:Санни|Мара)(?![\p{L}])/u.test(stored.body);
  // The credit remark in this fixture is only Dima's joke, not proof of a loan.
  const creditAssertion=/кредит/iu.test(stored.body) && !/Дим[а-яё]*.{0,150}кредит/isu.test(stored.body) &&
    !/по словам Димы/iu.test(stored.body);
