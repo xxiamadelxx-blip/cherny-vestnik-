@@ -77,6 +77,13 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
    const endpoint=String(url);
    if(endpoint.startsWith('https://api.groq.com/')){
      aiCalls++;
+     const override=process.env.EDITORIAL_TEST_MODEL;
+     if(override){
+       const payload=JSON.parse(options.body);
+       payload.model=override;
+       if(override.includes('gpt-oss'))payload.reasoning_effort='low';
+       options={...options,body:JSON.stringify(payload)};
+     }
      const response=await fetcher(url,options);
      if(response.ok){
        const copy=await response.clone().json();
@@ -148,7 +155,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const creditAssertion=/кредит/iu.test(stored.body) && !/Дим[а-яё]*.{0,150}кредит/isu.test(stored.body) &&
    !/по словам Димы/iu.test(stored.body);
  const financiallyGrounded=!creditAssertion;
- const check={ingested,aiCalls,themes,swears,editorialSwears:tone.editorialSwearCount,distinctSwears:tone.editorialSwearRoots.length,templateJokes:tone.clichés.length,copiedLongJokes:tone.recycledLongLines.length,qualitySignalsPass:quality.pass,correctDay,unknownName,financiallyGrounded,
+ const check={model:process.env.EDITORIAL_TEST_MODEL||env.GROQ_MODEL,ingested,aiCalls,themes,swears,editorialSwears:tone.editorialSwearCount,distinctSwears:tone.editorialSwearRoots.length,templateJokes:tone.clichés.length,copiedLongJokes:tone.recycledLongLines.length,qualitySignalsPass:quality.pass,correctDay,unknownName,financiallyGrounded,
    length:stored.body.length,cited:evidence.cited,quotesVerified:evidence.quotesChecked};
  const report=[
   '# Чёрный Вестник: реальная проба токсичности и юмора',
