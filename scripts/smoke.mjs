@@ -1,6 +1,7 @@
 import {resolve} from 'node:path';
 import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {readFileSync} from 'node:fs';
 
 // This smoke test uses ONLY read-only Telegram and Cloudflare API calls and an
 // unauthorized request to the Worker. It never processes or sends group messages.
@@ -22,9 +23,15 @@ export async function smoke({env=process.env, fetcher=fetch, log=console.log} = 
   const telegram=await request('https://api.telegram.org/bot'+env.TELEGRAM_BOT_TOKEN+'/getWebhookInfo');
   if (!telegram.ok) throw new Error('Telegram getWebhookInfo HTTP '+telegram.status);
   const info=await telegram.json();
-  if (!info?.ok||info?.result?.url!==base+'/webhook')
-    throw new Error('Telegram webhook not registered to expected Worker');
-  log('PASS Telegram webhook URL points to expected Worker');
+  const transport=JSON.parse(readFileSync(new URL('../wrangler.jsonc',import.meta.url),'utf8')).vars?.TELEGRAM_TRANSPORT||'webhook';
+  if(transport==='polling') {
+    if(!info?.ok||info?.result?.url)throw new Error('Telegram webhook still active; getUpdates polling would be blocked');
+    log('PASS Telegram webhook disabled, queued updates retained for D1 polling');
+  }else{
+    if(!info?.ok||info?.result?.url!==base+'/webhook')
+      throw new Error('Telegram webhook not registered to expected Worker');
+    log('PASS Telegram webhook URL points to expected Worker');
+  }
   const health=await request(base+'/healthz');
   if (!health.ok) throw new Error('Live Worker /healthz HTTP '+health.status);
   const body=await health.json();
@@ -39,7 +46,7 @@ export async function smoke({env=process.env, fetcher=fetch, log=console.log} = 
   });
   if (forged.status!==403) throw new Error('Worker accepted forged webhook or unexpected HTTP '+forged.status);
   log('PASS Worker rejects forged Telegram webhook (403)');
-  log('SMOKE PASS: configured webhook, live Worker health, anti-forgery. No chat messages sent.');
+  log('SMOKE PASS: Telegram transport '+transport+', live Worker health, anti-forgery. No chat messages sent.');
   return {url:base,version:body.version};
 }
 if (process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href) {
