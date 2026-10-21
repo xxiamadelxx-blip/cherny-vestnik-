@@ -80,7 +80,7 @@ export function correctNearbyNameTypos(body, rows) {
     const from=Math.max(0,pointer.index-170);
     const span=text.slice(from,pointer.index);
     if(new RegExp('(?<![\\p{L}])'+name+'(?![\\p{L}])','iu').test(span))continue;
-    const tokens=[...span.matchAll(/\b[А-ЯЁ][а-яё]{2,20}\b/gu)];
+    const tokens=[...span.matchAll(/(?<![\p{L}])[А-ЯЁ][а-яё]{2,20}(?![\p{L}])/gu)];
     for(const token of tokens){
       const candidate=token[0];
       if(candidate.length!==name.length-1)continue;
