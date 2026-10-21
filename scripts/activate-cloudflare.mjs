@@ -1,7 +1,49 @@
 import {spawnSync} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
+import {createHmac} from 'node:crypto';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
+
+
+export function stableWebhookSecret(token,accountId) {
+  if(!token||!accountId)throw new Error('Cannot derive stable Telegram webhook secret');
+  // Deterministic and private, so a failed webhook registration never breaks
+  // future deployments by silently rotating the Worker-side secret.
+  return createHmac('sha256',token)
+    .update('cherny-vestnik:telegram-webhook:v1:'+accountId)
+    .digest('hex').slice(0,48);
+}
+
+export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+  let status=0;
+  for(let attempt=0;attempt<4;attempt++){
+    try {
+      const result=await fetcher('https://api.telegram.org/bot'+token+'/setWebhook',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:url+'/webhook',secret_token:secret,
+          allowed_updates:['message'],drop_pending_updates:false,max_connections:3}),
+        signal:AbortSignal.timeout(16000)
+      });
+      status=result.status;
+      let reply;
+      try {reply=await result.json();}catch{reply=null;}
+      if(result.ok&&reply?.ok===true)return true;
+      // 400/401/403 are configuration errors, not transient.
+      if(result.status!==429&&result.status<500)
+        throw new Error('Telegram setWebhook rejected request (HTTP '+result.status+')');
+      if(attempt===3)break;
+      const retryHeader=Number(result.headers?.get('retry-after'));
+      const backoff=Number.isFinite(retryHeader)&&retryHeader>0?
+        Math.min(16000,Math.ceil(retryHeader*1000)):
+        600*2**attempt;
+      await wait(backoff);
+    }catch(error){
+      if(/setWebhook rejected request/.test(String(error)))throw error;
+      if(attempt===3)break;
+      await wait(600*2**attempt);
+    }
+  }
+  throw new Error('Telegram setWebhook failed after four attempts (last HTTP '+status+')');
+}
 
 export async function activate({env = process.env, fetcher = fetch, putSecret = null}) {
   const required = ['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID','TELEGRAM_BOT_TOKEN','GROQ_API_KEY'];
@@ -23,7 +65,7 @@ export async function activate({env = process.env, fetcher = fetch, putSecret = 
     // Do not print the child output, which might contain sensitive data.
     if (result.status !== 0) throw new Error(`Worker secret ${name} upload failed (exit ${result.status})`);
   });
-  const webhookSecret = randomBytes(24).toString('hex');
+  const webhookSecret = stableWebhookSecret(env.TELEGRAM_BOT_TOKEN,env.CLOUDFLARE_ACCOUNT_ID);
   await runner('TELEGRAM_BOT_TOKEN', env.TELEGRAM_BOT_TOKEN);
   await runner('GROQ_API_KEY', env.GROQ_API_KEY);
   await runner('TELEGRAM_WEBHOOK_SECRET', webhookSecret);
@@ -32,13 +74,7 @@ export async function activate({env = process.env, fetcher = fetch, putSecret = 
   const url = `https://cherny-vestnik.${result.subdomain}.workers.dev`;
   const health = await fetcher(url + '/healthz');
   if (!health.ok) throw new Error(`Deployed Worker health check failed: HTTP ${health.status}`);
-  const telegram = await fetcher(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({url:url+'/webhook',secret_token:webhookSecret,
-      allowed_updates:['message'],drop_pending_updates:false,max_connections:3})
-  });
-  const reply = await telegram.json();
-  if (!telegram.ok || reply.ok !== true) throw new Error('Telegram setWebhook request failed');
+  await setTelegramWebhook({fetcher,url,token:env.TELEGRAM_BOT_TOKEN,secret:webhookSecret});
   return {url, webhookConfigured: true};
 }
 
