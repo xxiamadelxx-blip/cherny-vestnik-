@@ -4,7 +4,7 @@ import {mkdtempSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {provisionD1} from '../scripts/provision-d1.mjs';
-import {activate} from '../scripts/activate-cloudflare.mjs';
+import {activate,stableWebhookSecret,setTelegramWebhook} from '../scripts/activate-cloudflare.mjs';
 
 const UUID='12345678-1234-1234-1234-123456789abc';
 const apiEnv = {CLOUDFLARE_API_TOKEN:'fake',CLOUDFLARE_ACCOUNT_ID:'fake',TELEGRAM_BOT_TOKEN:'123:TEST',GROQ_API_KEY:'fake'};
@@ -72,4 +72,42 @@ test('Telegram webhook is registered only after all Worker secrets and health ch
 
 test('Missing required secret stops deployment before any network or Worker changes',async()=>{
   await assert.rejects(activate({env:{...apiEnv,GROQ_API_KEY:''},fetcher:()=>{throw Error('should not be called');},putSecret:()=>{throw Error('should not be called');}}),/GROQ_API_KEY/);
+});
+
+
+test('Telegram webhook HMAC is stable between deploys and never exposes the bot token',()=>{
+ const first=stableWebhookSecret('1111:LONG_TEST_SECRET','account-one');
+ assert.equal(first,stableWebhookSecret('1111:LONG_TEST_SECRET','account-one'));
+ assert.notEqual(first,stableWebhookSecret('2222:OTHER_TEST_SECRET','account-one'));
+ assert.notEqual(first,stableWebhookSecret('1111:LONG_TEST_SECRET','account-two'));
+ assert.match(first,/^[a-f0-9]{48}$/);
+ assert.ok(!first.includes('LONG_TEST_SECRET'));
+});
+test('Telegram webhook registration retries 429 and 503 without rotating the secret',async()=>{
+ const waits=[],secrets=[];let calls=0;
+ await setTelegramWebhook({
+   url:'https://cherny-vestnik.example.workers.dev',
+   token:'123:test',secret:'a'.repeat(48),
+   wait:async value=>{waits.push(value);},
+   fetcher:async(_url,opts)=>{
+     const req=JSON.parse(opts.body);
+     secrets.push(req.secret_token);
+     calls++;
+     if(calls===1)return Response.json({ok:false},{status:429,headers:{'retry-after':'3'}});
+     if(calls===2)return Response.json({ok:false},{status:503});
+     return Response.json({ok:true,result:true});
+   }
+ });
+ assert.equal(calls,3);
+ assert.deepEqual(waits,[3000,1200]);
+ assert.deepEqual(secrets,Array(3).fill('a'.repeat(48)));
+});
+test('Telegram webhook registration stops on permanent 401, no automatic retries',async()=>{
+ let attempts=0;
+ await assert.rejects(setTelegramWebhook({
+  url:'https://cherny-vestnik.example.workers.dev',token:'fake',secret:'1'.repeat(48),
+  wait:()=>{throw Error('must not sleep');},
+  fetcher:async()=>{attempts++;return Response.json({ok:false},{status:401});}
+ }),/HTTP 401/);
+ assert.equal(attempts,1);
 });
