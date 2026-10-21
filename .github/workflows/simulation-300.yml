@@ -1,0 +1,44 @@
+name: Synthetic 300 Message Groq Report
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/simulation-300.yml'
+permissions:
+  contents: write
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Run production bot logic with 300 synthetic messages and REAL Groq (no Telegram delivery)
+        run: node scripts/simulate-300.mjs
+      - name: Save generated report and chat transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-groq-300-message-report
+          path: |
+            reports/simulation-300.md
+            reports/simulation-300-chat.json
+          if-no-files-found: warn
+      - name: Publish synthetic report in repository
+        if: success()
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add reports/simulation-300.md reports/simulation-300-chat.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'test: save synthetic 300-message Groq report'
+            git push origin HEAD:main
+          fi
