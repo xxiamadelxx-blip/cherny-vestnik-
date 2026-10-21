@@ -4,6 +4,7 @@ import {
 } from './core.js';
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
+import {pollTelegram} from './polling.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,EvidenceValidationError} from './evidence.js';
 
@@ -270,6 +271,12 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
 }
 
 export async function runCron(env, now = Date.now(), fetcher = fetch) {
+  // Telegram cannot consistently resolve workers.dev. Pull mode avoids that
+  // dependency and safely checkpoints message IDs before issuing next offset.
+  if(env.TELEGRAM_TRANSPORT==='polling'){
+    try {await pollTelegram(env,{now,fetcher,handleUpdate});}
+    catch(err){console.warn('Telegram polling transient error: '+String(err).slice(0,135));}
+  }
   // Retain at most four days of raw text and two weeks of previous-joke excerpts.
   await run(env.DB,`DELETE FROM messages WHERE posted_at<? AND NOT EXISTS (
     SELECT 1 FROM digests d WHERE d.chat_id=messages.chat_id
