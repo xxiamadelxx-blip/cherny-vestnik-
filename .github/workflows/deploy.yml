@@ -42,5 +42,5 @@ jobs:
         run: npx wrangler d1 migrations apply cherny-vestnik --remote
       - name: Deploy Worker and 15-minute Cron
         run: npx wrangler deploy
-      - name: Upload secrets and register Telegram webhook
+      - name: Register idempotent Telegram webhook with safe retries
         run: node scripts/activate-cloudflare.mjs
