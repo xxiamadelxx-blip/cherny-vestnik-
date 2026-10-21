@@ -14,7 +14,7 @@ export function stableWebhookSecret(token,accountId) {
 }
 
 export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
-  let status=0;
+  let status=0,lastReason='unavailable';
   for(let attempt=0;attempt<4;attempt++){
     try {
       const result=await fetcher('https://api.telegram.org/bot'+token+'/setWebhook',{
@@ -33,6 +33,7 @@ export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms
           .replaceAll(token,'[token]').replaceAll(secret,'[secret]').replaceAll(url,'[worker]')
           .replace(/https?:\/\/[^\s]+/g,'[url]')
           .slice(0,180);
+        lastReason=description;
         if(result.status===400 && /failed to resolve host|temporary failure in name resolution|dns lookup/i.test(description)) {
           // Telegram occasionally cannot resolve Cloudflare workers.dev from its
           // own DNS, even though the Worker is live on the public Internet.
@@ -55,7 +56,7 @@ export async function setTelegramWebhook({fetcher=fetch,url,token,secret,wait=ms
       await wait(600*2**attempt);
     }
   }
-  throw new Error('Telegram setWebhook failed after four attempts (last HTTP '+status+')');
+  throw new Error('Telegram setWebhook failed after four attempts (last HTTP '+status+'): '+lastReason);
 }
 
 export async function activate({env = process.env, fetcher = fetch, putSecret = null}) {
