@@ -15,7 +15,7 @@ const data=Array.from({length:1000},(_,i)=>({
 }));
 function dbAdapter() {
  const sqlite=new DatabaseSync(':memory:');
- for(const name of ['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql'])
+ for(const name of ['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql','0005_editorial_drafts.sql'])
    sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
  return {sqlite,DB:{prepare(sql){const q=sqlite.prepare(sql);return {bind(...args){return {
     first:async()=>q.get(...args)||null,
