@@ -9,6 +9,20 @@ export class EvidenceValidationError extends Error {
 const QUOTED_SOURCE = /[«“"]([^»”"\n]{3,350})[»”"]\s*[,.!?;:]?\s*\[#(\d+)\]/gu;
 const POINTER=/\[#(\d+)\]/g;
 
+const ANY_LITERAL_QUOTE=/[«“"]([^»”"\n]{3,350})[»”"]/gu;
+function precedingCitation(text,index){
+  const prefix=String(text).slice(Math.max(0,index-160),index);
+  const end=Math.max(prefix.lastIndexOf('\n'),prefix.lastIndexOf('.'),prefix.lastIndexOf('!'),prefix.lastIndexOf('?'));
+  const citations=[...prefix.slice(end+1).matchAll(/\[#(\d+)\]/g)];
+  return citations.length?Number(citations.at(-1)[1]):null;
+}
+function followingCitation(text,index){
+  const tail=String(text).slice(index,index+24);
+  const match=tail.match(/^\s*[,.!?;:]?\s*\[#(\d+)\]/u);
+  return match?Number(match[1]):null;
+}
+
+
 export function citedMessageIds(body) {
   return [...new Set([...String(body).matchAll(POINTER)].map(m=>Number(m[1])))];
 }
@@ -127,6 +141,16 @@ export function verifyEditorialEvidence(body, sourceRows) {
       throw new EvidenceValidationError('verbatim quote does not match the cited message');
     verifyQuotedSpeaker(text,match,sourceRows);
   }
+  // Check quotes whose source ID appears before, as well as after.
+  for(const quote of text.matchAll(ANY_LITERAL_QUOTE)){
+    if(followingCitation(text,quote.index+quote[0].length)!==null)continue;
+    const id=precedingCitation(text,quote.index);
+    if(id===null)continue;
+    const source=entries.get(id);
+    if(!source||!normalized(source.body).includes(normalized(quote[1])))
+      throw new EvidenceValidationError('quote following source ID is not verbatim');
+    checked++;
+  }
   verifyNarratedQuoteAttribution(text,sourceRows);
   verifyNoFabricatedScenes(text,sourceRows);
   return {cited:refs.length,quotesChecked:checked};
@@ -235,7 +259,7 @@ function nearestLiteralSource(quote,source) {
 }
 export function correctNearMissQuotes(body,sourceRows) {
   const source=new Map(sourceRows.map(row=>[Number(row.message_id),String(row.body||'')]));
-  return String(body??'').replace(QUOTED_SOURCE,(full,quoted,id)=>{
+  const correctedAfter=String(body??'').replace(QUOTED_SOURCE,(full,quoted,id)=>{
     const actual=source.get(Number(id));
     if(!actual||normalized(actual).includes(normalized(quoted)))return full;
     const literal=nearestLiteralSource(quoted,actual);
@@ -245,6 +269,15 @@ export function correctNearMissQuotes(body,sourceRows) {
     const start=full.indexOf(closing,1);
     if(start<0)return full;
     return opening+literal+closing+full.slice(start+closing.length);
+  });
+  return correctedAfter.replace(ANY_LITERAL_QUOTE,(full,quoted,index,text)=>{
+    if(followingCitation(text,index+full.length)!==null)return full;
+    const id=precedingCitation(text,index);
+    if(id===null)return full;
+    const actual=source.get(id);
+    if(!actual||normalized(actual).includes(normalized(quoted)))return full;
+    const literal=nearestLiteralSource(quoted,actual);
+    return literal?full[0]+literal+full[full.length-1]:full;
   });
 }
 
