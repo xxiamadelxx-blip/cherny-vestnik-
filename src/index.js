@@ -10,6 +10,7 @@ import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNe
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.2';
+const MAX_EDITORIAL_REWRITES = 2;
 
 function authorizedWebhook(request, secret) {
   const supplied = request.headers.get('X-Telegram-Bot-Api-Secret-Token') || '';
@@ -54,13 +55,13 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       await send(env,chatId,'✅ Снова разрешён сбор твоих новых сообщений.',fetcher);
       return;
     }
-    if (!['enable','resume','disable','pause','status','time','now','wipe','help'].includes(cmd.name)) return;
+    if (!['enable','resume','disable','pause','status','time','now','retry','wipe','help'].includes(cmd.name)) return;
     if (!message.from?.id || !await isAdmin(env, chatId, message.from.id, fetcher)) {
       await send(env, chatId, '⛔ Эту команду может выполнить только администратор группы.', fetcher);
       return;
     }
     if (cmd.name === 'help') {
-      await send(env, chatId, '💀 /enable — включить сбор сообщений\n/disable — пауза\n/time 21:00 — время по Москве\n/now — выпустить сейчас (не чаще одного раза в день)\n/status — состояние\n/forgetme — удалить свои сообщения и отказаться от будущего сбора\n/optin — возобновить сбор своих сообщений\n/wipe — удалить весь архив группы и отключить бота', fetcher);
+      await send(env, chatId, '💀 /enable — включить сбор сообщений\n/disable — пауза\n/time 21:00 — время по Москве\n/now — выпустить сейчас (не чаще одного раза в день)\n/retry — повторить непринятый выпуск после редакторской проверки\n/status — состояние\n/forgetme — удалить свои сообщения и отказаться от будущего сбора\n/optin — возобновить сбор своих сообщений\n/wipe — удалить весь архив группы и отключить бота', fetcher);
     } else if (['enable','resume'].includes(cmd.name)) {
       await run(env.DB, `INSERT INTO chats(chat_id,title,enabled,created_at,updated_at)
         VALUES(?,?,1,?,?) ON CONFLICT(chat_id) DO UPDATE SET enabled=1,title=excluded.title,updated_at=excluded.updated_at`,
@@ -103,6 +104,10 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       if (outcome === 'locked') await send(env, chatId, 'Выпуск уже собирается другим запуском.', fetcher);
       if (outcome === 'processing') await send(env, chatId, '🧠 Полный анализ переписки идёт по частям. Каждое сообщение будет учтено; выпуск появится после завершения анализа, без выборки.', fetcher);
       if (outcome === 'waiting') await send(env,chatId,'⏳ Groq достиг временного лимита. Обработанные сообщения сохранены, Cron продолжит после сброса квоты. Проверяй /status.',fetcher);
+      if (outcome === 'needs_review') await send(env,chatId,'⚠️ Редакционная проверка дважды отклонила газету из-за неподтверждённых фактов. Выпуск заблокирован, чтобы не сжигать бесплатную квоту. Администратор может отправить /retry.',fetcher);
+    } else if (cmd.name === 'retry') {
+      const result=await run(env.DB,"UPDATE digests SET status='pending',lease_until=0,editorial_attempts=0,updated_at=? WHERE chat_id=? AND status='needs_review'",now,chatId);
+      await send(env,chatId,result.meta?.changes?'♻️ Непринятый выпуск возвращён в очередь. Следующий Cron попробует исправить его, сохраняя прежние обработанные сообщения.':'Непринятых выпусков для повторной проверки нет.',fetcher);
     } else if (cmd.name === 'wipe') {
       await run(env.DB, 'DELETE FROM messages WHERE chat_id=?', chatId);
       await run(env.DB, 'DELETE FROM digests WHERE chat_id=?', chatId);
@@ -133,11 +138,11 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
     VALUES(?,?,'pending',0,0,?)`, chatId, day, now);
   const lease = now + 120_000;
   const claim = await run(db, `UPDATE digests SET lease_until=?, status='working', updated_at=?
-    WHERE chat_id=? AND local_day=? AND status!='sent' AND lease_until<?`,
+    WHERE chat_id=? AND local_day=? AND status IN ('pending','working') AND lease_until<?`,
   lease, now, chatId, day, now);
   if (!claim.meta?.changes) {
     const old = await row(db, 'SELECT status FROM digests WHERE chat_id=? AND local_day=?', chatId, day);
-    return old?.status === 'sent' ? 'already_sent' : 'locked';
+    return old?.status === 'sent' ? 'already_sent' : old?.status==='needs_review' ? 'needs_review' : 'locked';
   }
   try {
     const snapshot = await row(db,'SELECT enabled,privacy_epoch FROM chats WHERE chat_id=?',chatId);
@@ -257,10 +262,12 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       await run(db, "DELETE FROM digests WHERE chat_id=? AND local_day=? AND status!='sent'",chatId,day);
     }
     if (err instanceof EvidenceValidationError) {
-      // Bad citations must never be published, but retrying every minute would
-      // waste the free Groq quota. Wait before requesting another editorial draft.
-      await run(db, `UPDATE digests SET lease_until=?,status='pending',updated_at=?
-        WHERE chat_id=? AND local_day=? AND status!='sent'`,now+15*60_000,now,chatId,day);
+      const count=await row(db,'SELECT editorial_attempts FROM digests WHERE chat_id=? AND local_day=?',chatId,day);
+      if(Number(count?.editorial_attempts||0)>=MAX_EDITORIAL_REWRITES){
+        await run(db,"UPDATE digests SET status='needs_review',lease_until=0,updated_at=? WHERE chat_id=? AND local_day=? AND status!='sent'",now,chatId,day);
+        return 'needs_review';
+      }
+      await run(db,"UPDATE digests SET lease_until=?,status='pending',updated_at=? WHERE chat_id=? AND local_day=? AND status!='sent'",now+15*60_000,now,chatId,day);
       throw err;
     }
     await run(db, `UPDATE digests SET lease_until=0,status='pending',updated_at=?
@@ -308,7 +315,7 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
       AND d.local_day=digest_reductions.local_day AND d.status!='sent')`,now-4*ONE_DAY_MS);
   const {hhmm} = localClock(now,env.BOT_TIME_ZONE || 'Europe/Moscow');
   const chats = await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
-    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status!='sent' AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
+    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status IN ('pending','working') AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
     FROM chats c WHERE c.enabled=1`);
   const outcomes = [];
   for (const chat of chats) {
