@@ -242,5 +242,7 @@ test('fabricated verbatim quote is blocked before Telegram delivery, with editor
  assert.equal(f.query('SELECT body FROM digests')[0].body,null);
  assert.equal(f.query('SELECT lease_until FROM digests')[0].lease_until,NOW+15*60_000);
  assert.equal(await publishDigest(f.env,'-1001111',NOW+60_000,f.fetcher),'locked');
- assert.equal(f.groqCalls,1,'must not burn more free Groq credits during cooldown');
+ assert.equal(f.groqCalls,2,'one initial draft plus one automatic repair, no calls during cooldown');
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
+ assert.ok(f.query('SELECT editorial_draft FROM digests')[0].editorial_draft);
 });
