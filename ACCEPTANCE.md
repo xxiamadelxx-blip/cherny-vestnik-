@@ -85,8 +85,8 @@ Nine of nine technical checks passed. Exactly 300 fictitious messages were inser
 - **PASS** Cloudflare Worker + D1 schema migration + production deployment: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39608399502 .
 - **PASS** deterministic 1000-message model-mock: all 1000 IDs present in exactly one chunk request, ledger count matches, no duplicate day release.
 - **FAIL** first real 1000-message run: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39607184045 ; a model reply was truncated, pipeline did not publish partial output. This failure is not considered a successful real 1000-message test.
-- **PENDING** rerun with increased chunk completion budget: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39608399587 .
-- **PENDING** editorial quality: citation IDs are mechanically checked, but nuanced quote attribution and factual inference still require a separate review. Prompts now target stronger, behavior-based satire without defamatory or discriminatory content.
+- **PASS** real Groq 1000 messages: https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39608399587 . The actual Groq simulation stage passed: 1000/1000 messages, 25 exhaustive batches, 28 real AI requests, 9/9 simulation assertions. The workflow overall was FAIL because a concurrent GitHub commit caused a non-fast-forward *report push*, not because the AI simulation failed. The generated report was recovered from the run artifact and committed separately as `reports/simulation-1000.md`. Subsequent simulation workflows publish artifacts only, avoiding that race.
+- **NOT ACCEPTED** editorial quality: citation IDs are mechanically checked, but nuanced quote attribution and factual inference still require a separate review. Prompts now target stronger, behavior-based satire without defamatory or discriminatory content.
 - **PENDING** real Telegram group delivery; no group messages used so far.
 
 No claim of unlimited free throughput: long messages and Groq RPM/TPM/TPD quotas can delay the daily digest. The Worker keeps the incomplete publication pending instead of sampling down to 85.
