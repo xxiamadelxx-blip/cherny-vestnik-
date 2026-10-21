@@ -53,3 +53,20 @@
 - Настоящий Groq/Telegram webhook: **NOT RUN**, необходимы ключи и созданный Telegram-бот.
 
 **Ни один тест с подменёнными внешними API не заменяет настоящую публикацию.**
+
+## Production evidence — 21 October 2026
+
+**Verified PASS (external services, no group joined):**
+- GitHub preflight run [39599577678](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39599577678): real Telegram getMe, Groq Qwen 3.8 27B chat completion, Cloudflare D1 and Workers subdomain queries.
+- Initial deployment run [39599750538](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39599750538): **FAIL** at D1 migration because Wrangler v4 rejects unsupported `--yes` argument. No Worker published on that attempt; D1 was created.
+- Corrected deployment run [39599888193](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39599888193): **PASS**. D1 migrations applied, Worker and 15-minute cron deployed, secrets uploaded, Telegram setWebhook returned success. URL: `https://cherny-vestnik.xxiamadelxx.workers.dev`.
+- Independent live smoke run [39600262813](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39600262813): **PASS**. Telegram getWebhookInfo returned the expected Worker URL; /healthz succeeded; a forged webhook request was rejected with HTTP 403. No group content sent.
+- GitHub unit/integration test run [39600262648](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39600262648): **PASS**, 24 automated tests at this stage.
+
+**Not yet verified (must not label complete):**
+- Add bot to a disposable test group after explaining data processing to members.
+- Test /enable, receipt of real messages, one real /now digest, /status, /forgetme and /wipe.
+- Observe next scheduled release at 21:00 Europe/Moscow and Telegram delivery.
+- Check AI output quality and factual citation against real messages; adjust satire accordingly.
+
+**Release state:** Cloud infrastructure + real credentials + live webhook smoke PASS. End-to-end chat publication pending. Never publish GitHub Secrets or token values.
