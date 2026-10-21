@@ -99,7 +99,18 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const ingested=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
  assert.equal(ingested,30);
  let outcome;
- try {outcome=await publishDigest(env,CHAT,NOW,isolated);}
+ try {
+   for(let attempt=0;attempt<4;attempt++){
+     outcome=await publishDigest(env,CHAT,NOW+attempt*120_000,isolated);
+     if(outcome==='sent'||outcome==='already_sent')break;
+     if(outcome!=='waiting')throw Error('Editorial job not ready: '+outcome);
+     const quota=sqlite.prepare('SELECT next_attempt_at FROM groq_budget WHERE scope=?').get('organization');
+     const waitMs=Math.max(1000,Number(quota?.next_attempt_at||Date.now()+5000)-Date.now()+1200);
+     if(waitMs>115000)throw Error('Insufficient free Groq quota during editorial test; scheduled workflow stopped safely');
+     log('Editorial Groq cooldown: waiting '+Math.ceil(waitMs/1000)+' seconds');
+     await new Promise(resolve=>setTimeout(resolve,waitMs));
+   }
+ }
  catch(error){
    mkdirSync('reports',{recursive:true});
    // Only synthetic fictional messages and the resulting draft, never user chats.
@@ -122,7 +133,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const evidence=verifyEditorialEvidence(stored.body,source);
  const total=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
  assert.equal(total,30);
- assert.equal(aiCalls,1);
+ assert.ok(aiCalls>=1&&aiCalls<=4,'bounded Groq calls including editorial correction');
  assert.ok(sent.some(text=>text.includes('ЧЁРНЫЙ ВЕСТНИК')));
  const swears=/(бляд|блят|хуй|нахуй|пиздец|ёбан|ебат|долбо)/i.test(stored.body);
  const themes=[/кофемашин|инвестиц/i,/игор|опозд|такси|ключ/i,/паша|прицел|автонавед/i,/дим|чайник|погод/i]
