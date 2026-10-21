@@ -5,7 +5,7 @@ import {
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
-import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,EvidenceValidationError} from './evidence.js';
+import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.2';
@@ -207,9 +207,11 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       }
       await checkConsent();
       // Guard every reference and verbatim quote with the original cited rows.
-      // The query is bounded by actual citation IDs, not whole-day message count.
+      // Formatting of source IDs is normalized without changing their numbers.
+      body=normalizeSourceMarkers(body);
       const citedRows=await fetchCitedMessages({db,chatId,body});
       body=correctNearbyNameTypos(body,citedRows);
+      body=correctDirectSpeechAttribution(body,citedRows);
       body=correctNearMissQuotes(body,citedRows);
       try {
         verifyEditorialEvidence(body,citedRows);
@@ -221,8 +223,10 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
         body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
         body=canonicalDigestDate(body,day);
+        body=normalizeSourceMarkers(body);
         const verifiedRows=await fetchCitedMessages({db,chatId,body});
         body=correctNearbyNameTypos(body,verifiedRows);
+        body=correctDirectSpeechAttribution(body,verifiedRows);
         body=correctNearMissQuotes(body,verifiedRows);
         await checkConsent();
         await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
