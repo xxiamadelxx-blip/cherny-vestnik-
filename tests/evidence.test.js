@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -64,4 +64,27 @@ test('name correction never changes a quote or distant unrelated person',()=>{
  const rows2=[{message_id:7,display_name:'Марта',body:'Она сказала Мара.'}];
  const input='Из слова «Мара» [#7] нельзя автоматически делать имя другого участника.';
  assert.equal(correctNearbyNameTypos(input,rows2),input);
+});
+
+
+test('slightly distorted quote is replaced with a real contiguous excerpt at zero model cost',()=>{
+ const current=[{message_id:8,body:'Я ещё не считал, не рушьте мне мечту.',display_name:'Саня'}];
+ const inaccurate='Саня попросил «не рушить мечту» [#8], а сам даже не считал.';
+ assert.throws(()=>verifyEditorialEvidence(inaccurate,current),EvidenceValidationError);
+ const fixed=correctNearMissQuotes(inaccurate,current);
+ assert.match(fixed,/«не рушьте мне мечту» \[#8\]/);
+ assert.equal(verifyEditorialEvidence(fixed,current).quotesChecked,1);
+});
+test('reordered but source-supported quote becomes exact raw phrase',()=>{
+ const current=[{message_id:9,body:'Ключи искал, они были в кармане, блядь.',display_name:'Игорь'}];
+ const wrong='Игорь рассказал: «искал ключи в кармане, блядь» [#9].';
+ const fixed=correctNearMissQuotes(wrong,current);
+ assert.match(fixed,/«Ключи искал, они были в кармане, блядь» \[#9\]/);
+ assert.equal(verifyEditorialEvidence(fixed,current).quotesChecked,1);
+});
+test('invented serious allegation cannot be laundered by fuzzy source quote repair',()=>{
+ const wrong='Саня признал «Я ограбил банк» [#101].';
+ const fixed=correctNearMissQuotes(wrong,rows);
+ assert.equal(fixed,wrong);
+ assert.throws(()=>verifyEditorialEvidence(fixed,rows),EvidenceValidationError);
 });
