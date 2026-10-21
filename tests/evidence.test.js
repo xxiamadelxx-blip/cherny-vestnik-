@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -44,4 +44,24 @@ test('SQL audit only reads cited rows from the proper Telegram chat',async()=>{
 test('whitespace and case changes allowed, but missing source words not',()=>{
  assert.equal(verifyEditorialEvidence('«ладно,   ВКЛЮЧИЛ автоприцел.» [#103]',rows).quotesChecked,1);
  assert.throws(()=>verifyEditorialEvidence('«Ладно включил автоприцел.» [#103]',rows),EvidenceValidationError);
+});
+
+
+test('release header date is taken from authoritative D1 day, never guessed by AI',()=>{
+ const source='💀 ЧЁРНЫЙ ВЕСТНИК | 20.10.2026\n\nСаня купил кофе.';
+ assert.ok(canonicalDigestDate(source,'2026-10-21').startsWith('💀 ЧЁРНЫЙ ВЕСТНИК | 21.10.2026'));
+ assert.ok(canonicalDigestDate('💀 ЧЁРНЫЙ ВЕСТНИК | 2026-10-20\nbody','2026-10-21').includes('21.10.2026'));
+ assert.match(canonicalDigestDate('🔥 Новости дня','2026-10-21'),/^💀 ЧЁРНЫЙ ВЕСТНИК \| 21\.10\.2026/);
+});
+test('quoted speaker name with dropped interior letter is corrected by cited source',()=>{
+ const input='Мара записала ответ «Саня, вчера ты говорил: я не буду включать автоприцел.» [#102].';
+ const fixed=correctNearbyNameTypos(input,rows);
+ assert.match(fixed,/Марта записала/);
+ assert.match(fixed,/«Саня, вчера ты говорил: я не буду включать автоприцел.» \[#102\]/);
+ assert.equal(verifyEditorialEvidence(fixed,rows).quotesChecked,1);
+});
+test('name correction never changes a quote or distant unrelated person',()=>{
+ const rows2=[{message_id:7,display_name:'Марта',body:'Она сказала Мара.'}];
+ const input='Из слова «Мара» [#7] нельзя автоматически делать имя другого участника.';
+ assert.equal(correctNearbyNameTypos(input,rows2),input);
 });
