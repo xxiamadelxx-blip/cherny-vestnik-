@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at INTEGER NOT NULL,
   PRIMARY KEY(chat_id, local_day)
 );
+
 CREATE TABLE IF NOT EXISTS optouts (
   chat_id TEXT NOT NULL,
   user_id TEXT NOT NULL,

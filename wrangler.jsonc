@@ -4,6 +4,14 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "triggers": {"crons": ["*/15 * * * *"]},
-  "vars": {"GROQ_MODEL": "qwen/qwen3.8-27b", "BOT_TIME_ZONE": "Europe/Moscow"},
-  "d1_databases": [{"binding":"DB", "database_name":"cherny-vestnik", "database_id":"REPLACE_WITH_D1_DATABASE_UUID", "migrations_dir":"migrations"}]
+  "vars": {
+    "GROQ_MODEL": "qwen/qwen3.8-27b",
+    "BOT_TIME_ZONE": "Europe/Moscow"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "cherny-vestnik",
+    "database_id": "REPLACE_WITH_D1_DATABASE_UUID",
+    "migrations_dir": "migrations"
+  }]
 }
