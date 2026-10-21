@@ -4,7 +4,7 @@ import {
 } from './core.js';
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
-import {pollTelegram} from './polling.js';
+import {pollTelegram,pollBatchSize} from './polling.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,EvidenceValidationError} from './evidence.js';
 
@@ -274,8 +274,16 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
   // Telegram cannot consistently resolve workers.dev. Pull mode avoids that
   // dependency and safely checkpoints message IDs before issuing next offset.
   if(env.TELEGRAM_TRANSPORT==='polling'){
-    try {await pollTelegram(env,{now,fetcher,handleUpdate});}
-    catch(err){console.warn('Telegram polling transient error: '+String(err).slice(0,135));}
+    let poll;
+    try {poll=await pollTelegram(env,{now,fetcher,handleUpdate});}
+    catch(err){
+      console.warn('Telegram polling transient error: '+String(err).slice(0,135));
+      return []; // Do not publish a newspaper from a potentially incomplete chat.
+    }
+    // A full page proves only that this page was consumed, not that Telegram
+    // has no further queued messages. Wait for the first short/empty page.
+    // An overlapping poller holding the lease is also not an all-clear.
+    if(poll.status!=='ok' || poll.received>=pollBatchSize(env))return [];
   }
   // Retain at most four days of raw text and two weeks of previous-joke excerpts.
   await run(env.DB,`DELETE FROM messages WHERE posted_at<? AND NOT EXISTS (
