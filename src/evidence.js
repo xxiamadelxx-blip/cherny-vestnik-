@@ -20,6 +20,12 @@ export function verifyEditorialEvidence(body, sourceRows) {
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
   const refs=citedMessageIds(text);
   if(text.includes('[без подтверждения]'))throw new EvidenceValidationError('unverified citation placeholder');
+  if(/\[\s*[,;]?\s*#\s*\d+\s*\]/u.test(text) && /\[\s*[,;]\s*#|\[#\s+\d+/u.test(text))
+    throw new EvidenceValidationError('malformed source pointer');
+  for(const match of text.matchAll(/[\u3400-\u9fff]+/gu)) {
+    if(!sourceRows.some(row=>String(row.body||'').includes(match[0])))
+      throw new EvidenceValidationError('non-source foreign script fragment');
+  }
   if(refs.length>100)throw new EvidenceValidationError('excessive citation count');
   for(const id of refs) {
     if(!Number.isSafeInteger(id)||!entries.has(id))
@@ -149,5 +155,29 @@ export function correctNearMissQuotes(body,sourceRows) {
     const start=full.indexOf(closing,1);
     if(start<0)return full;
     return opening+literal+closing+full.slice(start+closing.length);
+  });
+}
+
+
+// Fix common model formatting mistakes such as "[, #1028]" without ever
+// inventing a new message ID. The normal citation validator runs afterwards.
+export function normalizeSourceMarkers(body) {
+  return String(body??'').replace(/\[\s*[,;]?\s*#\s*(\d+)\s*\]/g, '[#$1]');
+}
+
+const SPEECH_VERBS='(?:написал[а]?|сказал[а]?|спросил[а]?|ответил[а]?|поинтересовал[а]сь|заявил[а]?|уверял[а]?|напомнил[а]?|заметил[а]?|признал[а]?|объяснил[а]?|подметил[а]?|отметил[а]?|утверждал[а]?)';
+
+// A very narrow safe fix: the subject directly adjacent to "[#ID] said"
+// must be that ID's author, never a different group participant.
+// Statements ABOUT someone, without speech verbs, are not modified.
+export function correctDirectSpeechAttribution(body, sourceRows) {
+  const authors=new Map(sourceRows.map(r=>[Number(r.message_id),String(r.display_name||'').split(/\s+/)[0]]));
+  const known=new Set([...authors.values()].map(x=>x.toLocaleLowerCase('ru-RU')));
+  const pattern=new RegExp('(?<![\\p{L}])([А-ЯЁ][а-яё]{2,20})(\\s*\\[#(\\d+)\\]\\s*'+SPEECH_VERBS+')','gu');
+  return String(body??'').replace(pattern,(full,candidate,tail,id)=>{
+    const actual=authors.get(Number(id));
+    if(!actual||!known.has(candidate.toLocaleLowerCase('ru-RU')))return full;
+    if(actual.toLocaleLowerCase('ru-RU')===candidate.toLocaleLowerCase('ru-RU'))return full;
+    return actual+tail;
   });
 }
