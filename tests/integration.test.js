@@ -14,6 +14,7 @@ function fixture() {
   sqlite.exec(readFileSync(new URL('../migrations/0002_exhaustive.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0003_groq_budget.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0004_digest_reductions.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0005_editorial_drafts.sql',import.meta.url),'utf8'));
   const db={prepare(query){
     const stmt=sqlite.prepare(query);
     return {bind(...params){return {
