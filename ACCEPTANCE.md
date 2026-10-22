@@ -177,3 +177,28 @@ The v0.2.1 changes do not add paid APIs or automatically upgrade any account tie
 - **NOT RUN:** real opted-in Telegram test-group delivery, next-day automatic delivery, independent subjective humor approval, and latest-version 300/1000-message live-Groq acceptance. Earlier exhaustive local and historical Groq checks are not evidence that the latest version passes these particular gates.
 
 Operating policy: no unconfirmed direct quotes, unconfirmed loans, or categorical meal/venue assertions are published. If output remains rejected, use the existing `needs_review` state instead of leaking factual accusations. A genuine creative-comedy judgement requires seeing the entire newspaper, not simply counting profanity or citations.
+
+## 22 October 2026: daytime 1000-message architecture (MVP 0.3.0)
+
+**Scope:** replace the 21:00-only Groq extraction bottleneck with on-the-day checkpointed analysis while keeping publication at the administrator-configured Moscow time.
+
+### Gauntlet Loop acceptance (independent GitHub Actions)
+
+- **PASS, 143/143 automated tests:** [CI run](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39768346313).
+- **PASS, deployed code:** [Cloudflare deployment](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39768247686) of production source change `2e26d910` (later test-only changes do not change deployed executable).
+- **PASS, synthetic 1000/1000 pre-analysis:** 25 sequential Groq-mocked batches of 40 messages completed before 21:00; an end-of-day summary reused their saved D1 ledger and did NOT invoke the AI to extract them again. The final summarization incurred one additional mocked request in this test.
+- **PASS, incremental grouping:** 40-message/full-input batches are processed immediately; smaller 24+ message groups are eligible after one hour; tiny groups wait for the daily report rather than spending one AI request per message.
+- **PASS, quota reserve:** `GROQ_PREPROCESS_TOKEN_SOFT_LIMIT=120000` versus total `GROQ_DAILY_TOKEN_SOFT_LIMIT=180000`, with at least 20000-token separation enforced in `canPreprocessWithQuota`. Actual Groq organization minute/day quotas and other clients can reduce availability beyond these local safety limits.
+- **PASS, downtime recovery:** precomputed facts and source IDs survive Cron restarts; a missed 21:00 publication uses the ORIGINAL scheduled cutoff and excludes later messages from yesterday's edition.
+- **PASS, late Telegram update:** a newly arrived post with an earlier Telegram timestamp is not silently lost. The chronological prefix is audited before further background work and before publication, and inconsistent cached batches are invalidated and reprocessed.
+- **PASS, consent:** `/forgetme` and `/disable` during Groq processing stop the pending checkpoint, with no newspaper sent from unauthorized state. D1 lease fencing prevents two simultaneous background writers.
+- **PASS, transparency:** `/status` reports pre-analysis progress and explains when the local evidence budget has reached its reserved threshold.
+
+### Explicit remaining evidence
+
+- **NOT RUN:** real 1000-message *daytime* Groq and Telegram end-to-end release acceptance on this exact v0.3.0 SHA. This feature was tested with deterministic fake Groq completions and real in-memory SQLite; real Groq was exercised on the older evening-driven pipeline in [reports/simulation-1000.md](reports/simulation-1000.md) with 1000/1000 and 28 HTTP requests.
+- **NOT RUN:** real opted-in Telegram group receipt and next day's automatic posted issue. A successful Cloudflare deployment does not prove delivery to an unconnected Telegram group.
+- **NOT ACCEPTED (separate):** subjective comedic/editorial quality of the current uncensored roast. Mechanical profanity/source gates alone do not prove a funny or error-free paper.
+- **Known free-tier boundary:** 1000 very long messages, late daily message spikes, 429s or organization-wide quota exhaustion can delay the issue. The implementation refuses to present a sampled or partial day as complete.
+
+**Daytime quota architecture verdict: PASS for implementation and automated integration. Real-group production acceptance: OPEN.**
