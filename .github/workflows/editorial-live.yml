@@ -1,7 +1,10 @@
 name: Focused Real Groq Editorial Acceptance
-# Third live editorial verification with affirmative punchline style.
+# One bounded real-Qwen run for MVP editorial acceptance; revert push trigger after evidence.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/editorial-live.yml']
 permissions:
   contents: read
 jobs:
