@@ -2,10 +2,6 @@ name: Focused Real Groq Editorial Acceptance
 # Final candidate: confirm real Qwen after quote and uncorroborated-loan corrections.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'src/editorial-prompt.js'
 permissions:
   contents: read
 jobs:
