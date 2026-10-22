@@ -30,6 +30,7 @@ export function analyzeRoastTone(body,source=[]){
     return 'хер';
   }));
   const clichés=TRITE.flatMap(re=>[...editor.matchAll(re)].map(x=>x[0]));
+  const explicitPunchlineLabels=[...editor.matchAll(/(?:^|\n)\s*(?:панчлайн|итог дня|мораль|вывод):/gimu)].map(x=>x[0].trim());
   const normalizedSource=source.map(x=>normalize(typeof x==='string'?x:x.body)).filter(Boolean);
   // Identify exact recycled long punchlines, not ordinary shared topic words.
   const reused=[];
@@ -46,6 +47,7 @@ export function analyzeRoastTone(body,source=[]){
     editorialSwearCount:items.length,
     editorialSwearRoots:[...roots],
     clichés,
+    explicitPunchlineLabels,
     recycledLongLines:reused,
     namedSections:NEEDED.filter(x=>text.includes(x)).length,
     hasSoftFinale:/вс[её]\s+равно\s+(?:молодцы|люблю)|я вас люблю|главное, что мы друзья|не\s+(?:злитесь|обижайтесь|сердитесь)|старайтесь\s+[^.!?\n]{0,45}не\s+злиться/iu.test(editor)
@@ -58,6 +60,7 @@ export function assessRoastSignals(tone){
   if(tone.editorialSwearRoots.length<2)problems.push('only one kind of expletive');
   if(tone.namedSections<4)problems.push('missing newspaper sections');
   if(tone.clichés.length>1)problems.push('generic prefab insults instead of original punchlines');
+  if(tone.explicitPunchlineLabels?.length)problems.push('explanatory punchline labels instead of actual jokes');
   if(tone.recycledLongLines.length>1)problems.push('too much copied user humor');
   if(tone.hasSoftFinale)problems.push('soft conciliatory finale');
   return {pass:problems.length===0,problems};
