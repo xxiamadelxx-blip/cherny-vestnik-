@@ -113,11 +113,16 @@ export async function composeDigest({env,day,total,notes,previous=[],fetcher=fet
 // A second editorial pass is used only if deterministic citation/quote auditing
 // rejects a draft. The *same* Groq free-tier gate applies to this operation.
 // Only cited raw messages are provided, never an entire 1000-message transcript.
-export async function reviseDigest({env,day,draft,citedRows=[],fetcher=fetch}) {
+export async function reviseDigest({env,day,draft,citedRows=[],editorialFeedback=[],fetcher=fetch}) {
   const originals=citedRows.map(m=>'[#'+m.message_id+'] '+String(m.display_name||'')+': '+String(m.body||''));
   const source=originals.join('\n').slice(0,11000);
   const content=[
     'Ты исправляешь НЕПРИНЯТЫЙ газетный черновик после независимой проверки.',
+    ...(editorialFeedback.length ? [
+      'ОТЧЁТ РЕДАКТОРА: '+editorialFeedback.join('; '),
+      'Перепиши материал, не просто добавляя ругань: усили новые оригинальные панчлайны на конкретных поступках, сохраняй все обязательные рубрики и острые концовки. От лица автора нужны разнообразные естественные крепкие выражения, а не только перепечатанные из реплик участников. Не добавляй фактов, о которых нет источников.',
+      'Если слабым оказался финал, замени его новой смешной связкой двух-трёх подтверждённых событий. Не копируй чужие готовые шутки из чата. Сохрани точные ссылки на сообщения.'
+    ] : []),
     'Проверь каждое словосочетание в кавычках «...» рядом с [#ID].',
     'Оно обязано дословно совпадать с исходным сообщением этого ID.',
     'Если оно не совпадает, используй ироничный пересказ БЕЗ кавычек, не придумывая новых фактов.',
