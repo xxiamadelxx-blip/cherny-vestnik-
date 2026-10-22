@@ -46,3 +46,9 @@
 ### Gauntlet Loop — deployment attempt 1
 - **TRIGGERED, RESULT PENDING:** [commit e8e7aa6](https://github.com/xxiamadelxx-blip/cherny-vestnik-/commit/e8e7aa65a1c2a08eaa2539e4f88df57d0ba3e7bb) changes only the deploy workflow comment, triggering its existing `push` path filter on `main` to deploy the already independently tested M4 source. No production success is claimed until a matching GitHub Actions run completes successfully.
 - **Next step:** inspect the new deployment run and its logs, then record PASS/FAIL; if PASS, close M4 and proceed to the existing real Telegram group E2E criterion. Do not rerun unrelated accepted tests.
+
+### Deployment attempt 1 — evidence-based result
+- **BLOCKED (external CI trigger):** after [e8e7aa6](https://github.com/xxiamadelxx-blip/cherny-vestnik-/commit/e8e7aa65a1c2a08eaa2539e4f88df57d0ba3e7bb), the GitHub Actions runs listing still shows no new deploy run; latest confirmed production run is `39768247686` for old SHA `2e26d910`. Connector file commits do not themselves establish an Actions execution. This is **not a successful deploy**.
+- **M4 remains ACTIVE / DEPLOY BLOCKED**, technical CI 146/146 PASS. No more cosmetic workflow edits or speculative retries. The available connector has no new `workflow_dispatch` action.
+- **Required external action:** on Android, open [Deploy workflow](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/workflows/deploy.yml), select `main`, tap `Run workflow` once. Then inspect the run conclusion and Worker version; on PASS mark M4 accepted.
+- **Independent next task:** prepare the already specified opt-in Telegram group E2E checklist and record real `/enable → messages → /now → scheduled next issue` results only after the user has actually added the bot. Do not claim real Telegram delivery from mocks.
