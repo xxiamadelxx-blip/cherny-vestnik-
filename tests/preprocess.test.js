@@ -83,9 +83,9 @@ test('1000 messages pre-analyzed in D1 through 25 daytime Cron batches and not r
 });
 
 test('early Cron does not spend tokens on isolated messages; aged batches are analyzed',async()=>{
- const f=fixture({count:12});
+ const f=fixture({count:24});
  await f.prepare();
- // All messages in this fixture are already > 30 minutes old at BASE.
+ // An aged 24-message batch can be preprocessed before it fills 40 slots.
  assert.equal((await runCron(f.env,BASE,f.fetcher))[0].result,'preprocessed');
  assert.equal(f.evidenceCalls,1);
  assert.deepEqual(await runCron(f.env,BASE+60_000,f.fetcher),[]);
@@ -189,4 +189,44 @@ test('publication invalidates a stale checkpoint even when 21:00 arrived before 
  assert.equal(source[0],delayed);
  assert.equal(await publishDigest(f.env,CHAT,Date.UTC(2026,9,22,18,1),f.fetcher),'sent');
  assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+});
+
+
+test('quiet chat keeps an open checkpoint without spending Groq on a 10-message day',async()=>{
+ const f=fixture({count:10});
+ await f.prepare();
+ assert.deepEqual(await runCron(f.env,BASE,f.fetcher),[]);
+ assert.equal(f.aiCalls,0);
+ const stored=f.query('SELECT status,window_start,window_end FROM digests');
+ assert.equal(stored.length,1);
+ assert.equal(stored[0].status,'pending');
+ assert.equal(stored[0].window_end,null);
+});
+
+test('missed 21:00 Cron closes earlier day at its original Moscow deadline and leaves late posts for next issue',async()=>{
+ const f=fixture({count:0});
+ const yesterday=Date.UTC(2026,9,21,17,30); // 20:30 Moscow
+ const cutoff=Date.UTC(2026,9,21,18,0); // 21:00 Moscow
+ await handleUpdate(f.message(1,'/enable',yesterday-3600000,1),f.env,f.fetcher,yesterday-3600000);
+ for(let i=101;i<=140;i++)
+   await handleUpdate(f.message(i,'Вчерашняя пицца '+i,yesterday-2400000+i*1000,2),
+     f.env,f.fetcher,yesterday-2400000+i*1000);
+ assert.equal((await runCron(f.env,yesterday,f.fetcher))[0].result,'preprocessed');
+ for(let i=141;i<=150;i++)
+   await handleUpdate(f.message(i,'Поздняя переписка '+i,cutoff+1800000+i*1000,2),
+     f.env,f.fetcher,cutoff+1800000+i*1000);
+ // Simulate a Worker outage across the publication time and midnight.
+ const nextDay=Date.UTC(2026,9,22,1,0);
+ const result=await runCron(f.env,nextDay,f.fetcher);
+ assert.equal(result[0].result,'sent');
+ const old=f.query('SELECT local_day,window_start,window_end,status FROM digests WHERE local_day=?','2026-10-21')[0];
+ assert.equal(old.window_end,cutoff);
+ assert.equal(old.status,'sent');
+ assert.equal(f.evidenceCalls,1,'yesterday source notes were reused');
+ await runCron(f.env,nextDay+60000,f.fetcher);
+ const current=f.query('SELECT local_day,window_start,window_end FROM digests WHERE local_day=?','2026-10-22')[0];
+ assert.equal(current.window_start,cutoff);
+ assert.equal(current.window_end,null);
+ const late=f.query('SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=?',CHAT,cutoff)[0].n;
+ assert.equal(late,10);
 });
