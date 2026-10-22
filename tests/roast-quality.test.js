@@ -31,3 +31,12 @@ test('originality estimate flags verbatim copied long jokes outside quotes',()=>
   assert.equal(tone.recycledLongLines.length,2);
   assert.equal(assessRoastSignals(tone).pass,false);
 });
+
+
+test('politely telling the roast victims not to get angry is a rejected soft finale',()=>{
+ const sample='💀 ЧЁРНЫЙ ВЕСТНИК\n🔥 Главное позорище\n⚔️ Главный срач\n🏆 Номинации\n🪦 Приговор дня\n'
+  +'Блядь, какая экономия. Нахуй часы. Ёбаные обещания. Старайтесь сильно не злиться: всё равно весело.';
+ const tone=analyzeRoastTone(sample);
+ assert.equal(tone.hasSoftFinale,true);
+ assert.ok(assessRoastSignals(tone).problems.some(s=>s.includes('soft')));
+});
