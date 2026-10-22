@@ -46,3 +46,19 @@ test('explicit punchline labels are not a substitute for jokes',()=>{
  assert.ok(tone.explicitPunchlineLabels.length>0);
  assert.ok(assessRoastSignals(tone).problems.some(p=>p.includes('punchline labels')));
 });
+
+
+test('Unicode boundaries prevent counting harmless substrings inside common Russian words',()=>{
+ const text=section+'Себе купил кофемашину. Небо и вера в чудеса подвели героя. Дима назвал эксперимент хуйнёй.';
+ const tone=analyzeRoastTone(text);
+ assert.equal(tone.editorialSwearCount,1);
+ assert.equal(tone.editorialSwearRoots.length,1);
+ assert.equal(assessRoastSignals(tone).pass,false);
+});
+
+test('real obscene words still count, including different morphological forms',()=>{
+ const text=section+'Всё превратилось в ёбаный фарс. Блядь, это опять началось. Нахуй такое планирование.';
+ const tone=analyzeRoastTone(text);
+ assert.equal(tone.editorialSwearCount,3);
+ assert.equal(tone.editorialSwearRoots.length,3);
+});
