@@ -277,3 +277,30 @@ test('delayed same-evening Cron closes at 21:00, not at the late invocation time
  const after=f.query('SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=?',CHAT,cutoff)[0].n;
  assert.equal(after,10,'post-cutoff messages stay in D1 for the next edition');
 });
+
+
+test('manual /now uses its actual request time, never the future scheduled cutoff',async()=>{
+ const f=fixture({count:24});
+ await f.prepare();
+ const requested=Date.UTC(2026,9,22,17,30); // 20:30 Moscow
+ const result=await publishDigest(f.env,CHAT,requested,f.fetcher);
+ assert.equal(result,'sent');
+ const snapshot=f.query('SELECT window_end,status FROM digests WHERE chat_id=? AND local_day=?',CHAT,'2026-10-22')[0];
+ assert.equal(snapshot.window_end,requested);
+ assert.equal(snapshot.status,'sent');
+});
+
+test('delayed scheduled run creates its first-ever edition at the 21:00 boundary',async()=>{
+ const f=fixture({count:0});
+ const now=Date.UTC(2026,9,22,18,12); // 21:12 Moscow
+ const before=now-60*60_000;
+ await handleUpdate(f.message(1,'/enable',before-60000,1),f.env,f.fetcher,before-60000);
+ for(let id=101;id<=112;id++){
+   const at=before+(id-101)*1000;
+   await handleUpdate(f.message(id,'До 21:00 '+id,at,2),f.env,f.fetcher,at);
+ }
+ const result=await runCron(f.env,now,f.fetcher);
+ assert.equal(result[0].result,'sent');
+ const ending=f.query('SELECT window_end FROM digests WHERE chat_id=? AND local_day=?',CHAT,'2026-10-22')[0].window_end;
+ assert.equal(ending,Date.UTC(2026,9,22,18,0));
+});
