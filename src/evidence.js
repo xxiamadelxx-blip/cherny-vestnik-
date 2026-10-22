@@ -139,6 +139,21 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
   return true;
 }
 
+// Remove a demonstrably unsupported financial allegation from the completed
+// draft, rather than asking Groq to fabricate a new justification. Only the
+// offending sentence is dropped, all other source-cited stories remain intact.
+// The complete digest is validated again after this conservative operation.
+export function dropUnverifiedLoanSentences(body,sourceRows) {
+  return String(body??'').replace(/[^.!?\n]+[.!?]?/gu,part=>{
+    try {verifyUnprovenLoanClaims(part,sourceRows);return part;}
+    catch(error) {
+      if(error instanceof EvidenceValidationError &&
+        /unsupported categorical credit claim/.test(error.message))return '';
+      throw error;
+    }
+  });
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
