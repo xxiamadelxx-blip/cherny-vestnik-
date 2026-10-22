@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# Qwen-only MVP editorial gate: one synthetic 30-message LIVE completion after 103/103 unit PASS.
+# Qwen editorial run after removing arbitrary verbatim quote minimum.
 on:
   workflow_dispatch:
   push:
