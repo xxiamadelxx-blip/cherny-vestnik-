@@ -2,10 +2,6 @@ name: Focused Real Groq Editorial Acceptance
 # Third live editorial verification with affirmative punchline style.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'src/ai.js'
 permissions:
   contents: read
 jobs:
