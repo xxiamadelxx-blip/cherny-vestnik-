@@ -5,7 +5,7 @@ import {
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {pollTelegram,pollPageBudget} from './polling.js';
-import {preprocessDigest} from './preprocess.js';
+import {preprocessDigest,canPreprocessWithQuota} from './preprocess.js';
 import {reconcileAnalyzedPrefix} from './prefix.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {analyzeRoastTone,assessRoastSignals} from './roast-quality.js';
@@ -90,7 +90,8 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       const progress=pending?'\n'+(pending.window_end===null?'Предварительный анализ ':'Обработка ')+pending.local_day+': '+(done?.n||0)+'/'+(total?.n||0)+' сообщений.':'';
       const review=blocked?.n?'\n⚠️ Газет на редакторской проверке: '+blocked.n+'. Команда /retry доступна администратору (архив хранится до 4 дней).':'';
       const quotaLine=next?'⏳ Groq: пауза до '+until+' по Москве.':'✅ Groq: запросы разрешены.';
-      await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}${review}`,fetcher);;
+      const preflight=(!next&&quota&&!canPreprocessWithQuota(quota,Date.now(),env))?'\nФоновый анализ ждёт сброса лимита: токены зарезервированы для итоговой газеты.':'';
+      await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}${preflight}${review}`,fetcher);;
     } else if (cmd.name === 'time') {
       if (!/^([01]\d|2[0-3]):(00|15|30|45)$/.test(cmd.arg)) {
         await send(env, chatId, 'Время укажи по Москве и кратно 15 минутам: /time 21:00', fetcher);
