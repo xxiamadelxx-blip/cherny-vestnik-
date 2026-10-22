@@ -48,7 +48,7 @@ export function analyzeRoastTone(body,source=[]){
     clichés,
     recycledLongLines:reused,
     namedSections:NEEDED.filter(x=>text.includes(x)).length,
-    hasSoftFinale:/вс[её]\s+равно\s+(?:молодцы|люблю)|я вас люблю|главное, что мы друзья/iu.test(editor)
+    hasSoftFinale:/вс[её]\s+равно\s+(?:молодцы|люблю)|я вас люблю|главное, что мы друзья|не\s+(?:злитесь|обижайтесь|сердитесь)|старайтесь\s+[^.!?\n]{0,45}не\s+злиться/iu.test(editor)
   };
 }
 
