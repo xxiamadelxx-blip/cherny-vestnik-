@@ -128,6 +128,17 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
       /(?<![\p{L}])я(?![\p{L}])|(?:купил|купила|взял|взяла|оформил|оформила)/iu.test(raw);
   });
   for(const sentence of stripped.split(/[.!?\n]+/u)) {
+    // “Officially went into debt” is a concrete money claim too, even
+    // when the newspaper avoided the exact word 'credit'.
+    const debtAssertion=/(?:влез|залез|ввязал[а-яё]*|загнал[а-яё]*)\s+в\s+(?:долг[а-яё]*|кредит[а-яё]*)|набра[а-яё]*\s+долг[а-яё]*/iu.test(sentence);
+    if(debtAssertion&&!/(?:по\s+словам|якобы|пошутил[а-яё]*|в\s+шутку|будто|словно)/iu.test(sentence)){
+      const admitted=sourceRows.some(row=>{
+        const line=String(row.body||'');
+        return /(?:кредит|рассрочк|долг)/iu.test(line) &&
+          /(?<![\p{L}])я\s+(?:взял[а-яё]*|оформил[а-яё]*|залез[а-яё]*|влез[а-яё]*|задолжал[а-я-яё]*)|у\s+меня\s+(?:долги|кредит)/iu.test(line);
+      });
+      if(!admitted)throw new EvidenceValidationError('unsupported categorical credit claim from third-party joke');
+    }
     // Loan-as-metaphor still asserts an unproven financial obligation when it
     // names a specific member. A third party's joke is NOT an admission.
     const loanMetaphor=/кредитн[а-яё]*\s+(?:рабств|петл|ярм|каторг|оков)/iu.test(sentence);
@@ -151,7 +162,8 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
 // Tight semantic guard for a real Groq failure: a person's QUESTION about
 // dinner cannot prove that a meal was eaten or that a restaurant was empty.
 // Keep literal quoted questions available as supported quotations.
-const MEAL_EATEN=/(?:пицц[а-яё]*[^.!?\n]{0,50}(?:съел[а-яё]*|съеден[а-яё]*|доел[а-яё]*)|(?:всю|все|всё)\s+пицц[а-яё]*[^.!?\n]{0,35}(?:съел[а-яё]*|доел[а-яё]*))/iu;
+const MEAL_EATEN=/(?:пицц(?:а|у|ы|е|ой|ей|ами|ах)(?![\p{L}])[^.!?\n]{0,50}(?:съел[а-яё]*|съеден[а-яё]*|доел[а-яё]*)|(?:всю|все|всё)\s+пицц(?:у|ы|а|е|ой)(?![\p{L}])[^.!?\n]{0,35}(?:съел[а-яё]*|доел[а-яё]*)|(?:всё|все)\s+(?:уже\s+)?(?:съели|доели))/iu;
+const REPORTED_QUESTION=/(?:спросил[а]?|спрашивал[а]?|поинтересовал[а]сь|задал[а]?\s+вопрос)[^.!?\n]{0,95}(?:съел|доел)/iu;
 const EMPTY_VENUE=/(?:вош[её]л|заш[её]л|влетел|ворвался)[^.!?\n]{0,65}(?:пуст[а-яё]*\s+(?:зал|пиццери)|пиццери[а-яё]*\s+без\s+людей)/iu;
 export function verifyUnprovenMealEvents(body,sourceRows){
   const plain=String(body??'').replace(/[«“"][^»”"\n]{0,500}[»”"]/gu,' ');
@@ -159,7 +171,7 @@ export function verifyUnprovenMealEvents(body,sourceRows){
   const confirmedConsumption=original.some(line=>!line.includes('?')&&MEAL_EATEN.test(line));
   const confirmedEmpty=original.some(line=>EMPTY_VENUE.test(line));
   for(const sentence of plain.split(/[.!?\n]+/u)){
-    if(MEAL_EATEN.test(sentence)&&!confirmedConsumption)
+    if(MEAL_EATEN.test(sentence)&&!confirmedConsumption&&!REPORTED_QUESTION.test(sentence))
       throw new EvidenceValidationError('unconfirmed consumption inferred from a question');
     if(EMPTY_VENUE.test(sentence)&&!confirmedEmpty)
       throw new EvidenceValidationError('unsourced empty venue invented by editor');
