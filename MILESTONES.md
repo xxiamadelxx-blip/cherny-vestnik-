@@ -42,3 +42,7 @@
 
 ### Текущая остановка
 **Открытый этап: M4, deployment BLOCKED.** Независимый CI на исправленном коде PASS 146/146; облачная публикация этой версии не доказана. После PASS деплоя перейти к реальному тестовому Telegram E2E; пока внешний блокер сохраняется, допустимы только независимые задачи из существующих критериев (не новые улучшения).
+
+### Gauntlet Loop — deployment attempt 1
+- **TRIGGERED, RESULT PENDING:** [commit e8e7aa6](https://github.com/xxiamadelxx-blip/cherny-vestnik-/commit/e8e7aa65a1c2a08eaa2539e4f88df57d0ba3e7bb) changes only the deploy workflow comment, triggering its existing `push` path filter on `main` to deploy the already independently tested M4 source. No production success is claimed until a matching GitHub Actions run completes successfully.
+- **Next step:** inspect the new deployment run and its logs, then record PASS/FAIL; if PASS, close M4 and proceed to the existing real Telegram group E2E criterion. Do not rerun unrelated accepted tests.
