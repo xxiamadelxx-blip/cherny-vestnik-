@@ -1,6 +1,6 @@
 // Editorial signals for a consensual adult chat roast. Mechanical indicators
 // only: human reading still decides whether a joke is funny or a fact inferred.
-const SWEAR = /бляд[ьяеи]?|блят[ьаеи]?|пизд[а-яё]*|(?:[зн]а)?хуй|хуйн[а-яё]*|хер[а-яё]*|(?:за)?[её]б[а-яё]*|долбо[её]б[а-яё]*|мудак[а-яё]*|сук[аиие]*|пиздец/giu;
+const SWEAR = /(?<![\p{L}])(?:бляд[ьяеи]?|блят[ьаеи]?|пизд[а-яё]*|(?:[зн]а)?хуй|хуйн[а-яё]*|хер[а-яё]*|(?:за)?[её]б[а-яё]*|долбо[её]б[а-яё]*|мудак[а-яё]*|сук[аиие]*|пиздец)(?![\p{L}])/giu;
 const TRITE = [
   /ты не [^.!?\n]{2,65},?\s*ты\s[^.!?\n]{2,70}/giu,
   /это не [^.!?\n]{2,65},?\s*это\s[^.!?\n]{2,70}/giu,
