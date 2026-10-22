@@ -1,4 +1,5 @@
 name: Deploy Telegram bot on Cloudflare Free
+# M4 acceptance deployment: publish the independently verified scheduled-cutoff fix.
 on:
   workflow_dispatch:
   push:
