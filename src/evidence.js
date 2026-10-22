@@ -175,23 +175,34 @@ export function dropUnverifiedLoanSentences(body,sourceRows) {
 export function dropUnverifiableQuoteSentences(body,sourceRows) {
   const raw=String(body??'');
   const entries=new Map(sourceRows.map(r=>[Number(r.message_id),String(r.body||'')]));
-  const segments=raw.split(/(?<=[.!?])(?=\s+[А-ЯЁ])/u);
-  const result=segments.map(segment=>{
-    for(const match of segment.matchAll(QUOTED_SOURCE)) {
-      const actual=entries.get(Number(match[2]));
-      if(actual && !normalized(actual).includes(normalized(match[1])))return '';
-    }
-    for(const match of segment.matchAll(ANY_LITERAL_QUOTE)) {
-      if(followingCitation(segment,match.index+match[0].length)!==null)continue;
-      const id=precedingCitation(segment,match.index);
-      if(id===null)continue;
-      const actual=entries.get(id);
-      if(actual && !normalized(actual).includes(normalized(match[1])))return '';
-    }
-    return segment;
-  }).join('');
-  // An empty skeleton must go through the existing AI repair, not to Telegram.
-  return result!==raw && !citedMessageIds(result).length?raw:result;
+  const bad=[];
+  for(const quote of raw.matchAll(ANY_LITERAL_QUOTE)){
+    const nextId=followingCitation(raw,quote.index+quote[0].length);
+    const id=nextId??precedingCitation(raw,quote.index);
+    if(id===null)continue;
+    const original=entries.get(id);
+    if(original===undefined||normalized(original).includes(normalized(quote[1])))continue;
+    // A bad quote invalidates its entire factual sentence, not just its marks.
+    const left=Math.max(raw.lastIndexOf('.',quote.index-1),raw.lastIndexOf('!',quote.index-1),
+      raw.lastIndexOf('?',quote.index-1),raw.lastIndexOf('\n',quote.index-1))+1;
+    const afterQuote=quote.index+quote[0].length;
+    const rightCandidates=['.','!','?','\n'].map(x=>raw.indexOf(x,afterQuote)).filter(x=>x>=0);
+    const right=rightCandidates.length?Math.min(...rightCandidates)+1:raw.length;
+    bad.push([left,right]);
+  }
+  if(!bad.length)return raw;
+  bad.sort((a,b)=>a[0]-b[0]);
+  const spans=[];
+  for(const [start,end] of bad){
+    if(spans.length&&start<=spans.at(-1)[1])
+      spans.at(-1)[1]=Math.max(end,spans.at(-1)[1]);
+    else spans.push([start,end]);
+  }
+  let cleaned='',cursor=0;
+  for(const [start,end] of spans){cleaned+=raw.slice(cursor,start);cursor=end;}
+  cleaned+=raw.slice(cursor);
+  cleaned=cleaned.replace(/[ \t]{2,}/gu,' ').replace(/\n{3,}/gu,'\n\n');
+  return citedMessageIds(cleaned).length?cleaned:raw;
 }
 
 export function verifyEditorialEvidence(body, sourceRows) {
