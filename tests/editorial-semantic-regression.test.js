@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {verifyEditorialEvidence,EvidenceValidationError} from '../src/evidence.js';
+import {verifyEditorialEvidence,dropUnverifiedMealSentences,EvidenceValidationError} from '../src/evidence.js';
 
 const messages=[
  {message_id:1025,display_name:'Марта',body:'Мы уже сели в пиццерию напротив метро.'},
@@ -53,4 +53,19 @@ test('participant cannot be presented as in debt on a third-party joke',()=>{
  assert.throws(()=>verifyEditorialEvidence('Саня официально влез в долги ради кофе [#1030].',source),
   e=>e instanceof EvidenceValidationError&&/credit claim/.test(e.message));
  assert.doesNotThrow(()=>verifyEditorialEvidence('По словам Димы, Саня якобы купил экономию в кредит [#1030].',source));
+});
+
+
+test('unconfirmed meal statement is omitted without losing unrelated cited facts',()=>{
+ const draft='Игорь искал пиццерию [#1029]. Пиццу уже съели [#1029]. Марта сидела в пиццерии [#1025].';
+ const cleaned=dropUnverifiedMealSentences(draft,messages);
+ assert.doesNotMatch(cleaned,/Пиццу уже съели/);
+ assert.match(cleaned,/Игорь искал пиццерию/);
+ assert.match(cleaned,/Марта сидела в пиццерии/);
+ assert.doesNotThrow(()=>verifyEditorialEvidence(cleaned,messages));
+});
+
+test('legitimate reported food question is kept by non-generative repair',()=>{
+ const question='Игорь нашёл пиццерию и спросил, уже ли все съели [#1029].';
+ assert.equal(dropUnverifiedMealSentences(question,messages),question);
 });
