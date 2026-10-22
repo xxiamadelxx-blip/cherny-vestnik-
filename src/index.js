@@ -6,6 +6,7 @@ import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {pollTelegram,pollPageBudget} from './polling.js';
 import {preprocessDigest} from './preprocess.js';
+import {reconcileAnalyzedPrefix} from './prefix.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {analyzeRoastTone,assessRoastSignals} from './roast-quality.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,dropUnverifiedLoanSentences,dropUnverifiedMealSentences,dropUnverifiableQuoteSentences,EvidenceValidationError} from './evidence.js';
@@ -170,8 +171,10 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       }
       const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?', chatId,start,end);
       const total = Number(n?.n || 0);
-      const alreadyAnalyzed=Number((await row(db,
-        'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,day))?.n||0);
+      // Late Telegram updates may have older timestamps than daytime
+      // checkpoints. Audit the saved prefix before using any summary.
+      const prefix=await reconcileAnalyzedPrefix(db,chatId,day,start,end);
+      const alreadyAnalyzed=prefix.processed;
       const smallRows = total>0 && total<=40 && alreadyAnalyzed===0 ? await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
         WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end) : [];
       if (total === 0) {
