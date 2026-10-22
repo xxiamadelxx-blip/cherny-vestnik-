@@ -128,6 +128,15 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
       /(?<![\p{L}])я(?![\p{L}])|(?:купил|купила|взял|взяла|оформил|оформила)/iu.test(raw);
   });
   for(const sentence of stripped.split(/[.!?\n]+/u)) {
+    // Loan-as-metaphor still asserts an unproven financial obligation when it
+    // names a specific member. A third party's joke is NOT an admission.
+    const loanMetaphor=/кредитн[а-яё]*\s+(?:рабств|петл|ярм|каторг|оков)/iu.test(sentence);
+    if(loanMetaphor && !/(?:по\s+словам|якобы|пошутил|в\s+шутку)/iu.test(sentence)) {
+      const directAdmission=sourceRows.some(row=>
+        /(?:в\s+кредит|кредит[ауеом]?|рассрочк)/iu.test(String(row.body||'')) &&
+        /(?<![\p{L}])я(?![\p{L}])/iu.test(String(row.body||'')));
+      if(!directAdmission)throw new EvidenceValidationError('unsupported categorical credit claim from third-party joke');
+    }
     if(!/(?:купил[аи]?|взял[аи]?|оформил[аи]?|приобр[её]л[аи]?|покупал[аи]?)[^.!?\n]{0,85}(?:в\s+кредит|в\s+рассрочку|кредит(?![\p{L}]))/iu.test(sentence))
       continue;
     if(/(?:по\s+словам|якобы|по\s+мнению|пошутил[аи]?|шутит|предположил[аи]?|в\s+шутку)/iu.test(sentence))
