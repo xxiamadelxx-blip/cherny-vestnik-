@@ -6,6 +6,7 @@ import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {pollTelegram,pollPageBudget} from './polling.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
+import {analyzeRoastTone,assessRoastSignals} from './roast-quality.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
@@ -221,13 +222,29 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       body=correctNearbyNameTypos(body,citedRows);
       body=correctDirectSpeechAttribution(body,citedRows);
       body=correctNearMissQuotes(body,citedRows);
+      // An accurate but lifeless digest is not accepted as a finished
+      // newspaper. Only apply the full-length roast check to active chats,
+      // never force several jokes out of a nearly empty day.
+      const digestWindow=await row(db,'SELECT window_start,window_end FROM digests WHERE chat_id=? AND local_day=?',chatId,day);
+      const sourceCount=digestWindow?.window_start==null?0:Number((await row(db,
+        'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',
+        chatId,digestWindow.window_start,digestWindow.window_end))?.n||0);
+      const verifyEditorialGate=(draft,sourceRows)=>{
+        verifyEditorialEvidence(draft,sourceRows);
+        if(sourceCount>=12) {
+          const quality=assessRoastSignals(analyzeRoastTone(draft,sourceRows));
+          if(!quality.pass)throw new EvidenceValidationError('roast quality: '+quality.problems.join('; '));
+        }
+      };
       try {
-        verifyEditorialEvidence(body,citedRows);
+        verifyEditorialGate(body,citedRows);
       } catch (err) {
         if(!(err instanceof EvidenceValidationError))throw err;
         // One automatic rewrite with original evidence, then audit again.
         // On a 429, the unaccepted draft above is kept for next Cron.
-        const revised=await reviseDigest({env,day,draft:body,citedRows,fetcher});
+        const feedback=err.message.includes('roast quality:')?
+          assessRoastSignals(analyzeRoastTone(body,citedRows)).problems:[];
+        const revised=await reviseDigest({env,day,draft:body,citedRows,editorialFeedback:feedback,fetcher});
         const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
         body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
         body=canonicalDigestDate(body,day);
@@ -239,7 +256,7 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         await checkConsent();
         await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
           body,now,chatId,day);
-        verifyEditorialEvidence(body,verifiedRows);
+        verifyEditorialGate(body,verifiedRows);
       }
       await checkConsent();
       await run(db, `UPDATE digests SET body=?,editorial_draft=NULL,status='working',updated_at=?
