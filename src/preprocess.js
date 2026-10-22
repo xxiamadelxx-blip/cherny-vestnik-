@@ -3,6 +3,7 @@
 // reserving the daily Groq budget for the final newspaper and fact-check.
 import {localClock,packTranscript,ONE_DAY_MS} from './core.js';
 import {analyzeChunk} from './ai.js';
+import {reconcileAnalyzedPrefix} from './prefix.js';
 import {readGroqBudget,quotaWaitUntil,GroqDeferredError} from './quota.js';
 
 const LEASE_MS=115_000, MIN_AGE_MS=30*60_000, MIN_AGED_MESSAGES=12;
@@ -72,9 +73,14 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
         throw Error('Chat permission changed during preprocessing');
     };
     await stillAllowed();
-    // A unique chunk number is computed under the digest lease.
+    const prefix=await reconcileAnalyzedPrefix(db,chatId,day,start,now);
+    const current=await all(db,`SELECT message_id,display_name,body,posted_at,user_id
+      FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?
+      ORDER BY posted_at,message_id LIMIT 40 OFFSET ?`,String(chatId),start,now,prefix.processed);
+    const actualBatch=packTranscript(current);
+    if(!actualBatch.count)return 'idle';
     const next=await row(db,'SELECT COALESCE(MAX(chunk_no),-1)+1 AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',String(chatId),day);
-    const output=await analyzeChunk({env,rows:available.slice(0,batch.count),fetcher});
+    const output=await analyzeChunk({env,rows:current.slice(0,actualBatch.count),fetcher});
     await stillAllowed();
     // Fencing and consent checks are part of the atomic chunk insert. A
     // stale cron after a lease takeover must not record its old evidence.
