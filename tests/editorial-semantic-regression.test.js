@@ -28,3 +28,29 @@ test('confirmed food consumption is allowed, not censored by the safeguard',()=>
  const source=[...messages,{message_id:1031,display_name:'Марта',body:'Да, всю пиццу съели, пока ты шёл.'}];
  assert.doesNotThrow(()=>verifyEditorialEvidence('Пиццу уже съели [#1031].',source));
 });
+
+
+test('reported question about eating in a pizzeria is not asserted consumption',()=>{
+ const truthful='Игорь нашёл пиццерию и спросил, уже ли все съели [#1029].';
+ assert.doesNotThrow(()=>verifyEditorialEvidence(truthful,messages));
+});
+
+test('question explicitly mentioning pizza does not assert it was eaten',()=>{
+ const truthful='Игорь спросил, всю ли пиццу уже съели [#1029].';
+ assert.doesNotThrow(()=>verifyEditorialEvidence(truthful,messages));
+});
+
+test('unquoted categorical answer to a mere question is rejected',()=>{
+ assert.throws(()=>verifyEditorialEvidence('Суки, вы снова всё съели [#1029].',messages),
+  e=>e instanceof EvidenceValidationError&&/unconfirmed consumption/.test(e.message));
+});
+
+test('participant cannot be presented as in debt on a third-party joke',()=>{
+ const source=[
+  {message_id:1015,display_name:'Саня',body:'Я заказал кофемашину. Это инвестиция в экономию.'},
+  {message_id:1030,display_name:'Дима',body:'Саня купил экономию в кредит, ха-ха.'}
+ ];
+ assert.throws(()=>verifyEditorialEvidence('Саня официально влез в долги ради кофе [#1030].',source),
+  e=>e instanceof EvidenceValidationError&&/credit claim/.test(e.message));
+ assert.doesNotThrow(()=>verifyEditorialEvidence('По словам Димы, Саня якобы купил экономию в кредит [#1030].',source));
+});
