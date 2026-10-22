@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# One bounded real-Qwen run for MVP editorial acceptance; revert push trigger after evidence.
+# Qwen-only MVP editorial gate: one synthetic 30-message LIVE completion after 103/103 unit PASS.
 on:
   workflow_dispatch:
   push:
