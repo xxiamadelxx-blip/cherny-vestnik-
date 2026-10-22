@@ -215,3 +215,26 @@ test('first-person acknowledgment supports an attributed credit fact',()=>{
  ];
  assert.doesNotThrow(()=>verifyEditorialEvidence('Саня купил кофемашину в кредит [#601].',source));
 });
+
+
+test('one inflected word in a cited quote is corrected from the exact source',()=>{
+ const originals=[{message_id:1018,display_name:'Дима',body:'Признаю, эксперимент с погодой оказался хуйнёй.'}];
+ const generated='Редактор пишет: «хуйня» [#1018].';
+ assert.throws(()=>verifyEditorialEvidence(generated,originals),EvidenceValidationError);
+ const repaired=correctNearMissQuotes(generated,originals);
+ assert.match(repaired,/«хуйнёй» \[#1018\]/);
+ assert.equal(verifyEditorialEvidence(repaired,originals).quotesChecked,1);
+});
+
+test('ambiguous or unrelated one-word quotes are never guessed or silently accepted',()=>{
+ const originals=[
+   {message_id:20,display_name:'Игорь',body:'Такая новая книга, а старая книга лежит дома.'},
+   {message_id:21,display_name:'Марта',body:'Вчера пробовала горячую пиццу.'}
+ ];
+ const ambiguous='«книге» [#20]';
+ assert.equal(correctNearMissQuotes(ambiguous,originals),ambiguous);
+ assert.throws(()=>verifyEditorialEvidence(ambiguous,originals),EvidenceValidationError);
+ const fabricated='«пельмени» [#21]';
+ assert.equal(correctNearMissQuotes(fabricated,originals),fabricated);
+ assert.throws(()=>verifyEditorialEvidence(fabricated,originals),EvidenceValidationError);
+});
