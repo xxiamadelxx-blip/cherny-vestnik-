@@ -326,3 +326,43 @@ test('blocked factual draft is visible in status and private data expires after 
  assert.equal(f.query("SELECT COUNT(*) AS n FROM digests WHERE status='needs_review'")[0].n,0);
  assert.equal(f.query('SELECT COUNT(*) AS n FROM messages')[0].n,0);
 });
+
+
+test('full editorial gate rewrites an accurate but bland 16-message newspaper before sending',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  for(let id=101;id<=116;id++)
+    await handleUpdate(f.makeMsg({id,from:id%2?1:2,text:'Сегодня обсуждаем доставку, время и планы, запись номер '+id}),f.env,f.fetcher,NOW-300000);
+  f.setAISequence(["💀 ЧЁРНЫЙ ВЕСТНИК\n🔥 Главное позорище\n⚔️ Главный срач\n🏆 Номинации\n🪦 Приговор дня\nВася сегодня писал про доставку [#101]. Петя тоже участвовал в разговоре [#102]. Всё замечательно.","💀 ЧЁРНЫЙ ВЕСТНИК\n🔥 Главное позорище\n⚔️ Главный срач\n🏆 Номинации\n🪦 Приговор дня\nВася сперва объявил охоту на доставку, потом попросил три заказа подряд [#101]. Блядь, стратегия экономии совершила кульбит на первом же заказе. Петя торжественно поставил будильник [#102], а через час спросил, который час [#103]. Нахуй хронометры, если календарём заведует растерянность. Ёбаная бухгалтерия приключений: двое планировали ясный день, а вышел музей собственных оправданий [#104]."]);
+  assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'sent');
+  assert.equal(f.groqCalls,2,'one initial request, one editorial quality rewrite');
+  assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
+  assert.equal(f.sent.filter(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,1);
+  assert.ok(!f.sent.some(x=>x.text.includes('Всё замечательно')));
+});
+
+test('persistently bland newspaper is blocked after two revisions without spending more AI tokens',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  for(let id=101;id<=116;id++)
+    await handleUpdate(f.makeMsg({id,from:id%2?1:2,text:'Доставка, часы, покупки: '+id}),f.env,f.fetcher,NOW-300000);
+  f.setAIResponse("💀 ЧЁРНЫЙ ВЕСТНИК\n🔥 Главное позорище\n⚔️ Главный срач\n🏆 Номинации\n🪦 Приговор дня\nВася сегодня писал про доставку [#101]. Петя тоже участвовал в разговоре [#102]. Всё замечательно.");
+  await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/roast quality/);
+  assert.equal(f.groqCalls,2);
+  assert.equal(await publishDigest(f.env,'-1001111',NOW+15*60_000+1,f.fetcher),'needs_review');
+  const calls=f.groqCalls;
+  assert.equal(await publishDigest(f.env,'-1001111',NOW+60*60_000,f.fetcher),'needs_review');
+  assert.equal(f.groqCalls,calls);
+  assert.equal(f.query('SELECT status FROM digests')[0].status,'needs_review');
+  assert.equal(f.sent.filter(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,0);
+});
+
+test('tiny chat keeps factual delivery without artificial three-joke quota',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  for(let id=101;id<=109;id++)
+    await handleUpdate(f.makeMsg({id,text:'Всего несколько сообщений '+id}),f.env,f.fetcher,NOW-300000);
+  f.setAIResponse("💀 ЧЁРНЫЙ ВЕСТНИК\n🔥 Главное позорище\n⚔️ Главный срач\n🏆 Номинации\n🪦 Приговор дня\nВася сегодня писал про доставку [#101]. Петя тоже участвовал в разговоре [#102]. Всё замечательно.");
+  assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'sent');
+  assert.equal(f.groqCalls,1);
+});
