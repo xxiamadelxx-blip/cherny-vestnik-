@@ -243,7 +243,9 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         // One automatic rewrite with original evidence, then audit again.
         // On a 429, the unaccepted draft above is kept for next Cron.
         const feedback=err.message.includes('roast quality:')?
-          assessRoastSignals(analyzeRoastTone(body,citedRows)).problems:[];
+          assessRoastSignals(analyzeRoastTone(body,citedRows)).problems:
+          ['Фактическая ошибка: '+err.message.replace(/^Editorial verification rejected:\s*/, '')+
+            '. Удали неподтверждённый факт вместо повторения его из чужой шутки.'];
         const revised=await reviseDigest({env,day,draft:body,citedRows,editorialFeedback:feedback,fetcher});
         const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
         body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
