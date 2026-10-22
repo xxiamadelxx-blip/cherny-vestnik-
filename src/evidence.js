@@ -128,7 +128,7 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
       /(?<![\p{L}])я(?![\p{L}])|(?:купил|купила|взял|взяла|оформил|оформила)/iu.test(raw);
   });
   for(const sentence of stripped.split(/[.!?\n]+/u)) {
-    if(!/(?:купил[аи]?|взял[аи]?|оформил[аи]?|приобр[её]л[аи]?|покупал[аи]?)[^.!?\n]{0,85}(?:в\s+кредит|в\s+рассрочку)/iu.test(sentence))
+    if(!/(?:купил[аи]?|взял[аи]?|оформил[аи]?|приобр[её]л[аи]?|покупал[аи]?)[^.!?\n]{0,85}(?:в\s+кредит|в\s+рассрочку|кредит\b)/iu.test(sentence))
       continue;
     if(/(?:по\s+словам|якобы|по\s+мнению|пошутил[аи]?|шутит|предположил[аи]?|в\s+шутку)/iu.test(sentence))
       continue;
@@ -144,6 +144,8 @@ export function verifyEditorialEvidence(body, sourceRows) {
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
   const refs=citedMessageIds(text);
   if(text.includes('[без подтверждения]'))throw new EvidenceValidationError('unverified citation placeholder');
+  if(/\[#\d+\s*[-–—]\s*\d+\]/u.test(text))
+    throw new EvidenceValidationError('unverified source ID range');
   if(/\[\s*[,;]?\s*#\s*\d+\s*\]/u.test(text) && /\[\s*[,;]\s*#|\[#\s+\d+/u.test(text))
     throw new EvidenceValidationError('malformed source pointer');
   for(const match of text.matchAll(/[\u3400-\u9fff]+/gu)) {
