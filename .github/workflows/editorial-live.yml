@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# Qwen editorial run after removing arbitrary verbatim quote minimum.
+# Final candidate: independent real-Qwen roast acceptance with concise editor contract.
 on:
   workflow_dispatch:
   push:
