@@ -238,3 +238,23 @@ test('ambiguous or unrelated one-word quotes are never guessed or silently accep
  assert.equal(correctNearMissQuotes(fabricated,originals),fabricated);
  assert.throws(()=>verifyEditorialEvidence(fabricated,originals),EvidenceValidationError);
 });
+
+
+test('third-party sarcasm cannot become an asserted purchase of credit',()=>{
+ const originals=[
+  {message_id:701,display_name:'Саня',body:'Заказал кофемашину.'},
+  {message_id:702,display_name:'Дима',body:'Саня купил экономию в кредит, ха-ха!'}
+ ];
+ assert.throws(()=>verifyEditorialEvidence('Саня купил кредит под видом экономии [#702].',originals),
+  err=>err instanceof EvidenceValidationError && /credit claim/.test(err.message));
+ assert.doesNotThrow(()=>verifyEditorialEvidence('По словам Димы, Саня якобы купил экономию в кредит [#702].',originals));
+});
+test('numeric reference ranges are rejected, never mistaken for two validated citations',()=>{
+ const originals=[
+  {message_id:704,display_name:'Игорь',body:'Пять минут'},
+  {message_id:705,display_name:'Лиза',body:'Прошло полчаса'}
+ ];
+ assert.throws(()=>verifyEditorialEvidence('Чат: опоздание [#704-705].',originals),
+  err=>err instanceof EvidenceValidationError&&/ID range/.test(err.message));
+ assert.doesNotThrow(()=>verifyEditorialEvidence('Игорь писал [#704], Лиза ответила [#705].',originals));
+});
