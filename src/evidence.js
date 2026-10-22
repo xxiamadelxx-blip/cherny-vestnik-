@@ -179,6 +179,21 @@ export function verifyUnprovenMealEvents(body,sourceRows){
   return true;
 }
 
+// Remove only a factually unsupported meal/venue sentence. A meal question
+// is still allowed as a question; nothing else in the newspaper is invented.
+export function dropUnverifiedMealSentences(body,sourceRows){
+  const raw=String(body??'');
+  const filtered=raw.replace(/[^.!?\n]+[.!?]?/gu,part=>{
+    try{verifyUnprovenMealEvents(part,sourceRows);return part;}
+    catch(error){
+      if(error instanceof EvidenceValidationError &&
+        /unconfirmed consumption|unsourced empty venue/.test(error.message))return '';
+      throw error;
+    }
+  });
+  return filtered!==raw&&!citedMessageIds(filtered).length?raw:filtered;
+}
+
 // Remove a demonstrably unsupported financial allegation from the completed
 // draft, rather than asking Groq to fabricate a new justification. Only the
 // offending sentence is dropped, all other source-cited stories remain intact.
