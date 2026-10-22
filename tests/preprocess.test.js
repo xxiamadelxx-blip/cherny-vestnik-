@@ -252,3 +252,28 @@ test('/status explicitly distinguishes final-publication reserve from Groq API d
  assert.match(f.sent.at(-1),/Фоновый анализ ждёт сброса лимита/);
  assert.match(f.sent.at(-1),/запросы разрешены/);
 });
+
+
+test('delayed same-evening Cron closes at 21:00, not at the late invocation time',async()=>{
+ const f=fixture({count:0});
+ const cutoff=Date.UTC(2026,9,22,18,0); // 21:00 Moscow
+ const early=Date.UTC(2026,9,22,17,20);
+ await handleUpdate(f.message(1,'/enable',early-600000,1),f.env,f.fetcher,early-600000);
+ for(let id=101;id<=140;id++){
+   const posted=early+(id-101)*1000;
+   await handleUpdate(f.message(id,'До выпуска '+id,posted,2),f.env,f.fetcher,posted);
+ }
+ assert.equal((await runCron(f.env,early+600000,f.fetcher))[0].result,'preprocessed');
+ for(let id=141;id<=150;id++){
+   const posted=cutoff+60000+(id-141)*1000;
+   await handleUpdate(f.message(id,'После границы '+id,posted,2),f.env,f.fetcher,posted);
+ }
+ const result=await runCron(f.env,cutoff+15*60000,f.fetcher); // delayed, but same day
+ assert.equal(result[0].result,'sent');
+ const record=f.query('SELECT window_end,body,status FROM digests WHERE chat_id=? AND local_day=?',CHAT,'2026-10-22')[0];
+ assert.equal(record.window_end,cutoff,'late Cron never extends the newspaper window');
+ assert.match(record.body,/Прочитано и обработано: 40 из 40/);
+ assert.equal(f.evidenceCalls,1,'preprocessed 40 messages were not reanalyzed');
+ const after=f.query('SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=?',CHAT,cutoff)[0].n;
+ assert.equal(after,10,'post-cutoff messages stay in D1 for the next edition');
+});
