@@ -148,6 +148,25 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
   return true;
 }
 
+// Tight semantic guard for a real Groq failure: a person's QUESTION about
+// dinner cannot prove that a meal was eaten or that a restaurant was empty.
+// Keep literal quoted questions available as supported quotations.
+const MEAL_EATEN=/(?:пицц[а-яё]*[^.!?\n]{0,50}(?:съел[а-яё]*|съеден[а-яё]*|доел[а-яё]*)|(?:всю|все|всё)\s+пицц[а-яё]*[^.!?\n]{0,35}(?:съел[а-яё]*|доел[а-яё]*))/iu;
+const EMPTY_VENUE=/(?:вош[её]л|заш[её]л|влетел|ворвался)[^.!?\n]{0,65}(?:пуст[а-яё]*\s+(?:зал|пиццери)|пиццери[а-яё]*\s+без\s+людей)/iu;
+export function verifyUnprovenMealEvents(body,sourceRows){
+  const plain=String(body??'').replace(/[«“"][^»”"\n]{0,500}[»”"]/gu,' ');
+  const original=sourceRows.map(row=>String(row.body||''));
+  const confirmedConsumption=original.some(line=>!line.includes('?')&&MEAL_EATEN.test(line));
+  const confirmedEmpty=original.some(line=>EMPTY_VENUE.test(line));
+  for(const sentence of plain.split(/[.!?\n]+/u)){
+    if(MEAL_EATEN.test(sentence)&&!confirmedConsumption)
+      throw new EvidenceValidationError('unconfirmed consumption inferred from a question');
+    if(EMPTY_VENUE.test(sentence)&&!confirmedEmpty)
+      throw new EvidenceValidationError('unsourced empty venue invented by editor');
+  }
+  return true;
+}
+
 // Remove a demonstrably unsupported financial allegation from the completed
 // draft, rather than asking Groq to fabricate a new justification. Only the
 // offending sentence is dropped, all other source-cited stories remain intact.
@@ -244,6 +263,7 @@ export function verifyEditorialEvidence(body, sourceRows) {
   }
   verifyNarratedQuoteAttribution(text,sourceRows);
   verifyNoFabricatedScenes(text,sourceRows);
+  verifyUnprovenMealEvents(text,sourceRows);
   verifyUnprovenLoanClaims(text,sourceRows);
   return {cited:refs.length,quotesChecked:checked};
 }
