@@ -6,7 +6,7 @@ import {analyzeChunk} from './ai.js';
 import {reconcileAnalyzedPrefix} from './prefix.js';
 import {readGroqBudget,quotaWaitUntil,GroqDeferredError} from './quota.js';
 
-const LEASE_MS=115_000, MIN_AGE_MS=30*60_000, MIN_AGED_MESSAGES=12;
+const LEASE_MS=115_000, MIN_AGE_MS=60*60_000, MIN_AGED_MESSAGES=24;
 const DEFAULT_PREPROCESS_BUDGET=120_000, FINAL_TOKEN_RESERVE=20_000;
 async function row(db,sql,...args){return db.prepare(sql).bind(...args).first();}
 async function all(db,sql,...args){return (await db.prepare(sql).bind(...args).all()).results||[];}
@@ -41,6 +41,11 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
   const start=existing?.window_start??prev?.last_end??(earliest?.first_at==null?null:Math.min(Number(earliest.first_at),now-ONE_DAY_MS));
   if(start===null||start===undefined||Number(start)>=now)return 'idle';
 
+  // Even a quiet day needs a durable open window. If the scheduled Cron is
+  // unavailable at 21:00, the next day can still close the right day.
+  await run(db,`INSERT OR IGNORE INTO digests
+    (chat_id,local_day,status,lease_until,next_part,updated_at,window_start)
+    VALUES(?,?,'pending',0,0,?,?)`,String(chatId),day,now,start);
   const count=Number((await row(db,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',String(chatId),start,now))?.n||0);
   const processed=Number((await row(db,'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',String(chatId),day))?.n||0);
   // Deletions normally invalidate chunks via privacy_epoch; if anything else
@@ -57,9 +62,6 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
   if(!full&&!aged)return 'idle';
   if(!canPreprocessWithQuota(await readGroqBudget(env),now,env))return 'waiting';
 
-  await run(db,`INSERT OR IGNORE INTO digests
-    (chat_id,local_day,status,lease_until,next_part,updated_at,window_start)
-    VALUES(?,?,'pending',0,0,?,?)`,String(chatId),day,now,start);
   const lease=now+LEASE_MS;
   const claim=await run(db,`UPDATE digests SET lease_until=?,status='working',updated_at=?
     WHERE chat_id=? AND local_day=? AND window_end IS NULL
