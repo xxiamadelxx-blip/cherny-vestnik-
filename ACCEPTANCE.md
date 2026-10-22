@@ -164,3 +164,16 @@ The v0.2.1 changes do not add paid APIs or automatically upgrade any account tie
 - Independent audit and acceptance criteria: [reports/editorial-quality-audit.md](reports/editorial-quality-audit.md).
 - The enhanced mechanical tone rubric in `src/roast-quality.js` is a guardrail, not proof that a joke is funny. Human taste and accurate factual reading remain a release gate.
 - Telegram real test group publication is still NOT RUN. No marketing claim of a finished MVP until quality and end-to-end evidence both exist.
+
+## MVP candidate release evidence, 22 October 2026
+
+**Release gate remains NOT ACCEPTED for real group operation.** These results distinguish executable checks from genuinely funny and factually correct satire.
+
+- **PASS (technical):** [130/130 tests](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39763744665) including Telegram backlog, no sampling, quota recovery, wrong citations, and the new semantic tests. Later [CI on current branch](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39763861354) also passed.
+- **PASS (deployed executable):** [Cloudflare production deployment](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39763708063) includes removal of unverified meal/empty-venue sentences, stronger debt check, and unchanged consent boundaries; active Telegram transport remains `getUpdates`, not webhook.
+- **PASS (bounded live API / mechanical tone):** [real 30-message Groq trial](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39761899183): 30/30 fictional messages ingested, 4 topics, 23 cited source IDs, 4 editorial swear words, 3 roots, no real Telegram post. Human reading found banal/recycled joke fragments: **NOT a human-accepted humor sample**.
+- **FAIL (editorial):** [subsequent real trial](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39762827944) invented consumed food and unconfirmed personal debt. The publisher correctly blocked the issue. Both failure patterns have since been added to regression tests and non-generative filters.
+- **DEFERRED (provider quota):** [newest real Qwen rehearsal](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39763830645): 130/130 local tests passed but 2 attempted Groq calls did not yield a completion before the test's safe quota cutoff. This is **not** a successful editorial trial nor proof of a regression.
+- **NOT RUN:** real opted-in Telegram test-group delivery, next-day automatic delivery, independent subjective humor approval, and latest-version 300/1000-message live-Groq acceptance. Earlier exhaustive local and historical Groq checks are not evidence that the latest version passes these particular gates.
+
+Operating policy: no unconfirmed direct quotes, unconfirmed loans, or categorical meal/venue assertions are published. If output remains rejected, use the existing `needs_review` state instead of leaking factual accusations. A genuine creative-comedy judgement requires seeing the entire newspaper, not simply counting profanity or citations.
