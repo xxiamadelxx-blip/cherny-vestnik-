@@ -40,3 +40,9 @@ test('politely telling the roast victims not to get angry is a rejected soft fin
  assert.equal(tone.hasSoftFinale,true);
  assert.ok(assessRoastSignals(tone).problems.some(s=>s.includes('soft')));
 });
+
+test('explicit punchline labels are not a substitute for jokes',()=>{
+ const tone=analyzeRoastTone(section+'Панчлайн: дружный разговор превратился в скучную стенгазету.');
+ assert.ok(tone.explicitPunchlineLabels.length>0);
+ assert.ok(assessRoastSignals(tone).problems.some(p=>p.includes('punchline labels')));
+});
