@@ -389,7 +389,20 @@ export function correctNearMissQuotes(body,sourceRows) {
 // Fix common model formatting mistakes such as "[, #1028]" without ever
 // inventing a new message ID. The normal citation validator runs afterwards.
 export function normalizeSourceMarkers(body) {
-  return String(body??'').replace(/\[\s*[,;]?\s*#\s*(\d+)\s*\]/g, '[#$1]');
+  return String(body??'')
+    .replace(/\[\s*[,;]?\s*#\s*(\d+)\s*\]/gu,'[#$1]')
+    // A short interval is shorthand, not a source in its own right.
+    // Expand only 2-4 consecutive IDs; malformed/large ranges stay rejected.
+    .replace(/\[#(\d+)\s*[-–—]\s*(\d+)\]/gu,(original,first,last)=>{
+      const start=Number(first),end=Number(last);
+      if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||
+        end<=start||end-start>3)return original;
+      return Array.from({length:end-start+1},(_,i)=>'[#'+(start+i)+']').join(' ');
+    })
+    // Explicit two-or-more numeric pointers in one bracket are expanded.
+    // Nonexistent pointers are still rejected against the real message DB.
+    .replace(/\[#\d+(?:\s*[,;]\s*\d+){1,5}\]/gu,part=>
+      [...part.matchAll(/\d+/gu)].map(x=>'[#'+Number(x[0])+']').join(' '));
 }
 
 const SPEECH_VERBS='(?:написал[а]?|сказал[а]?|спросил[а]?|ответил[а]?|поинтересовал[а]сь|заявил[а]?|уверял[а]?|напомнил[а]?|заметил[а]?|признал[а]?|объяснил[а]?|подметил[а]?|отметил[а]?|утверждал[а]?)';
