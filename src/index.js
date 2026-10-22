@@ -222,7 +222,10 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       body=correctNearbyNameTypos(body,citedRows);
       body=correctDirectSpeechAttribution(body,citedRows);
       body=correctNearMissQuotes(body,citedRows);
-      body=dropUnverifiedLoanSentences(body,citedRows);
+      const scrubbed=dropUnverifiedLoanSentences(body,citedRows);
+      // Do not publish an empty headline after removing the only factual claim.
+      // Let independent fact-check trigger a source-grounded rewrite instead.
+      if(scrubbed===body || /\[#\d+\]/u.test(scrubbed))body=scrubbed;
       // An accurate but lifeless digest is not accepted as a finished
       // newspaper. Only apply the full-length roast check to active chats,
       // never force several jokes out of a nearly empty day.
@@ -256,7 +259,8 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         body=correctNearbyNameTypos(body,verifiedRows);
         body=correctDirectSpeechAttribution(body,verifiedRows);
         body=correctNearMissQuotes(body,verifiedRows);
-        body=dropUnverifiedLoanSentences(body,verifiedRows);
+        const rescrubbed=dropUnverifiedLoanSentences(body,verifiedRows);
+        if(rescrubbed===body || /\[#\d+\]/u.test(rescrubbed))body=rescrubbed;
         await checkConsent();
         await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
           body,now,chatId,day);
