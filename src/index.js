@@ -5,12 +5,13 @@ import {
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
 import {pollTelegram,pollPageBudget} from './polling.js';
+import {preprocessDigest} from './preprocess.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {analyzeRoastTone,assessRoastSignals} from './roast-quality.js';
 import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,dropUnverifiedLoanSentences,dropUnverifiedMealSentences,dropUnverifiableQuoteSentences,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
-const PUBLIC_VERSION = '0.2.2';
+const PUBLIC_VERSION = '0.3.0';
 const MAX_EDITORIAL_REWRITES = 2;
 
 function authorizedWebhook(request, secret) {
@@ -81,11 +82,11 @@ export async function handleUpdate(update, env, fetcher = fetch, now = Date.now(
       const next=quotaWaitUntil(quota,Date.now(),env);
       const until=next?new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(next)):null;
       const usage=quota?.day_utc===new Date().toISOString().slice(0,10)?Number(quota.used_tokens||0):0;
-      const pending=await row(env.DB,"SELECT local_day,window_start,window_end FROM digests WHERE chat_id=? AND status IN ('pending','working') AND window_end IS NOT NULL ORDER BY local_day LIMIT 1",chatId);
+      const pending=await row(env.DB,"SELECT local_day,window_start,window_end FROM digests WHERE chat_id=? AND status IN ('pending','working') ORDER BY CASE WHEN window_end IS NOT NULL THEN 0 ELSE 1 END,local_day LIMIT 1",chatId);
       const blocked=await row(env.DB,"SELECT COUNT(*) AS n FROM digests WHERE chat_id=? AND status='needs_review'",chatId);
       const done=pending?await row(env.DB,'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,pending.local_day):null;
-      const total=pending?await row(env.DB,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',chatId,pending.window_start,pending.window_end):null;
-      const progress=pending?'\nОбработка '+pending.local_day+': '+(done?.n||0)+'/'+(total?.n||0)+' сообщений.':'';
+      const total=pending?await row(env.DB,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',chatId,pending.window_start,pending.window_end??now):null;
+      const progress=pending?'\n'+(pending.window_end===null?'Предварительный анализ ':'Обработка ')+pending.local_day+': '+(done?.n||0)+'/'+(total?.n||0)+' сообщений.':'';
       const review=blocked?.n?'\n⚠️ Газет на редакторской проверке: '+blocked.n+'. Команда /retry доступна администратору (архив хранится до 4 дней).':'';
       const quotaLine=next?'⏳ Groq: пауза до '+until+' по Москве.':'✅ Groq: запросы разрешены.';
       await send(env,chatId,`🗞 Вестник: ${chat?.enabled?'включён':'выключен'}\nВремя: ${chat?.digest_hhmm||'21:00'} по Москве\nСообщений в памяти: ${count?.n||0}\nМодель: ${env.GROQ_MODEL||'qwen/qwen3.8-27b'}\n${quotaLine}\nТокены бота сегодня (по данным API): ${usage}.${progress}${review}`,fetcher);;
@@ -169,11 +170,13 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       }
       const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?', chatId,start,end);
       const total = Number(n?.n || 0);
-      const smallRows = total>0 && total<=40 ? await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
+      const alreadyAnalyzed=Number((await row(db,
+        'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',chatId,day))?.n||0);
+      const smallRows = total>0 && total<=40 && alreadyAnalyzed===0 ? await all(db,`SELECT message_id,user_id,display_name,body,posted_at FROM messages
         WHERE chat_id=? AND posted_at>=? AND posted_at<? ORDER BY posted_at,message_id`,chatId,start,end) : [];
       if (total === 0) {
         body = `💀 ЧЁРНЫЙ ВЕСТНИК | ${day}\n\nСегодня в чате тишина. Кажется, здравый смысл наконец-то победил. Или все просто спят, блядь.`;
-      } else if (total <= 40 && packTranscript(smallRows).count === total) {
+      } else if (total <= 40 && alreadyAnalyzed===0 && packTranscript(smallRows).count === total) {
         const messages=smallRows;
         // No sampling or partial report even for small chats.
         body=(await createDigest({env,day,total,rows:messages,previous:await all(db,
@@ -366,7 +369,16 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
     FROM chats c WHERE c.enabled=1`);
   const outcomes = [];
   for (const chat of chats) {
-    if (!chat.pending_day && !scheduledDue(chat.digest_hhmm,hhmm)) continue;
+    if (!chat.pending_day && !scheduledDue(chat.digest_hhmm,hhmm)) {
+      try {
+        const result=await preprocessDigest({env,chatId:chat.chat_id,now,fetcher});
+        if(result!=='idle'&&result!=='closed')outcomes.push({chat_id:chat.chat_id,result});
+      }catch(err){
+        console.warn(`Preprocessing failed for chat ${chat.chat_id}: ${String(err).slice(0,120)}`);
+        outcomes.push({chat_id:chat.chat_id,result:'failed'});
+      }
+      continue;
+    }
     try {outcomes.push({chat_id:chat.chat_id,result:await publishDigest(env,chat.chat_id,now,fetcher,chat.pending_day||null)});}
     catch(err) {console.warn(`Digest failed for chat ${chat.chat_id}: ${String(err).slice(0,120)}`); outcomes.push({chat_id:chat.chat_id,result:'failed'});}
   }
