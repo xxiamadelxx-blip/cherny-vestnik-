@@ -421,7 +421,7 @@ test('editorial rewrite sees all small-chat source rows, not only first-draft ci
  assert.equal(await publishDigest(f.env,'-1001111',NOW,observed),'sent');
  assert.equal(requests.length,2);
  const repair=requests[1].messages.at(-1).content;
- assert.match(repair,/\\[#101\\]/);
- assert.match(repair,/\\[#116\\]/);
+ assert.ok(repair.includes('[#101]'));
+ assert.ok(repair.includes('[#116]'));
  assert.ok(f.sent.some(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')));
 });
