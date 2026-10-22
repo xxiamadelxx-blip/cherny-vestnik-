@@ -13,6 +13,23 @@ export function localClock(nowMs, timeZone = 'Europe/Moscow') {
     hhmm: `${part('hour')}:${part('minute')}`};
 }
 
+// Resolve a Moscow/local scheduled hour on an earlier day when Cron was
+// unavailable. Uses the actual IANA time zone offset, not a hardcoded UTC+3.
+export function scheduledEpochForDay(day,hhmm,timeZone='Europe/Moscow') {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day)||!/^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm))
+    throw Error('Invalid local publication date or time');
+  const target=Date.parse(day+'T'+hhmm+':00Z');
+  if(!Number.isFinite(target))throw Error('Invalid publication date');
+  let guess=target;
+  for(let i=0;i<4;i++){
+    const local=localClock(guess,timeZone);
+    const wallUtc=Date.parse(local.day+'T'+local.hhmm+':00Z');
+    if(wallUtc===target)return guess;
+    guess+=target-wallUtc;
+  }
+  throw Error('Cannot resolve local publication time for timezone');
+}
+
 export function scheduledDue(hhmm, nowHhmm) {
   const toMinutes = v => Number(v.slice(0, 2)) * 60 + Number(v.slice(3, 5));
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(hhmm) && toMinutes(nowHhmm) >= toMinutes(hhmm);
