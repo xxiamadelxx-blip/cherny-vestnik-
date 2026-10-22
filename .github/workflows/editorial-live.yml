@@ -1,5 +1,5 @@
 name: Focused Real Groq Editorial Acceptance
-# Final candidate: independent real-Qwen roast acceptance with concise editor contract.
+# Final candidate: confirm real Qwen after quote and uncorroborated-loan corrections.
 on:
   workflow_dispatch:
   push:
