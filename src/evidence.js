@@ -167,6 +167,33 @@ export function dropUnverifiedLoanSentences(body,sourceRows) {
   return filtered!==raw && !citedMessageIds(filtered).length ? raw:filtered;
 }
 
+// The model sometimes marks an ironic single word as a verbatim quote and
+// puts the neighboring message ID next to it. If the actual cited source
+// cannot support that quotation, remove only the offending sentence.
+// Do not change speaker IDs or conjure substitute text. Preserve enough
+// remaining source references for the full verifier to check.
+export function dropUnverifiableQuoteSentences(body,sourceRows) {
+  const raw=String(body??'');
+  const entries=new Map(sourceRows.map(r=>[Number(r.message_id),String(r.body||'')]));
+  const segments=raw.split(/(?<=[.!?])(?=\s+[А-ЯЁ])/u);
+  const result=segments.map(segment=>{
+    for(const match of segment.matchAll(QUOTED_SOURCE)) {
+      const actual=entries.get(Number(match[2]));
+      if(actual && !normalized(actual).includes(normalized(match[1])))return '';
+    }
+    for(const match of segment.matchAll(ANY_LITERAL_QUOTE)) {
+      if(followingCitation(segment,match.index+match[0].length)!==null)continue;
+      const id=precedingCitation(segment,match.index);
+      if(id===null)continue;
+      const actual=entries.get(id);
+      if(actual && !normalized(actual).includes(normalized(match[1])))return '';
+    }
+    return segment;
+  }).join('');
+  // An empty skeleton must go through the existing AI repair, not to Telegram.
+  return result!==raw && !citedMessageIds(result).length?raw:result;
+}
+
 export function verifyEditorialEvidence(body, sourceRows) {
   const text=String(body??'');
   const entries=new Map(sourceRows.map(row=>[Number(row.message_id),row]));
