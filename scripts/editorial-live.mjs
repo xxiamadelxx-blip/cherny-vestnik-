@@ -72,7 +72,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
    display_name:SPEAKERS[person].name,body,
    posted_at:NOW-60*60*1000+index*100000
  }));
- let aiCalls=0;const sent=[];let lastDraft='';
+ let aiCalls=0;const sent=[];let lastDraft='';const observedCompletions=[];
  const isolated=async(url,options)=>{
    const endpoint=String(url);
    if(endpoint.startsWith('https://api.groq.com/')){
@@ -88,6 +88,7 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
      if(response.ok){
        const copy=await response.clone().json();
        lastDraft=String(copy?.choices?.[0]?.message?.content||'');
+       observedCompletions.push(lastDraft);
      }
      return response;
    }
@@ -127,7 +128,9 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
       'Reason: '+String(error.message),
       'Groq calls: '+aiCalls,
       '',
-      '## Rejected output',
+      '## Groq completions in chronological order',
+      ...observedCompletions.flatMap((part,index)=>['### Completion '+(index+1),'~~~text',part,'~~~']),
+      '## Last rejected output',
       '~~~text',lastDraft,'~~~',
       '',
       '## Original fictional source messages',
