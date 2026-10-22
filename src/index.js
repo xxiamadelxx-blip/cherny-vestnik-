@@ -377,16 +377,20 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
     FROM chats c WHERE c.enabled=1`,today);
   const outcomes = [];
   for (const chat of chats) {
-    // If the 21:00 Cron was unavailable, close yesterday's window at its
-    // ACTUAL scheduled time, not 'now'; leave later posts for the next issue.
-    if(chat.pending_day&&chat.pending_day<today){
-      const deadline=scheduledEpochForDay(chat.pending_day,chat.digest_hhmm,zone);
-      if(deadline<=now){
-        await run(env.DB,`UPDATE digests SET window_end=?,updated_at=?
-          WHERE chat_id=? AND local_day=? AND window_end IS NULL
-            AND status IN ('pending','working') AND lease_until<?`,
-          deadline,now,chat.chat_id,chat.pending_day,now);
-      }
+    // Close scheduled windows at their exact local deadline even if the
+    // Telegram backlog or a Worker outage delayed this Cron invocation.
+    // This never affects an administrator's early /now command, which uses
+    // the actual requested time in publishDigest.
+    const editionDay=chat.pending_day||today;
+    const deadline=scheduledEpochForDay(editionDay,chat.digest_hhmm,zone);
+    if(deadline<=now){
+      await run(env.DB,`INSERT OR IGNORE INTO digests
+        (chat_id,local_day,status,lease_until,next_part,updated_at)
+        VALUES(?,?,'pending',0,0,?)`,chat.chat_id,editionDay,now);
+      await run(env.DB,`UPDATE digests SET window_end=?,updated_at=?
+        WHERE chat_id=? AND local_day=? AND window_end IS NULL
+          AND status IN ('pending','working') AND lease_until<?`,
+        deadline,now,chat.chat_id,editionDay,now);
     }
     if (!chat.pending_day && !scheduledDue(chat.digest_hhmm,hhmm)) {
       try {
