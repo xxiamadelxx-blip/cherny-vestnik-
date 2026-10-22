@@ -28,10 +28,17 @@
 - **Независимая проверка:** [PR #2](https://github.com/xxiamadelxx-blip/cherny-vestnik-/pull/2) содержит дополнительные тесты для `/now` и первого отложенного выпуска. Ожидается CI на исправленной версии; старые 143 PASS не засчитываются вместо этой проверки.
 - **Следующий шаг:** дождаться заключения нового CI; при PASS слить только проверенные тесты, выполнить Cloudflare deploy и пометить M4 PASS. При FAIL исправить конкретную регрессию (не более ещё двух циклов).
 
+### Gauntlet Loop — цикл 2: техническая регрессия закрыта
+- **PASS (independent CI):** [146/146 tests](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39817581102) at QA head `dc12fb0`. Previously failing getUpdates backlog tests (95/1000) now pass; the two additional tests prove manual `/now` and delayed first-ever scheduled issue.
+- **PASS (integration):** [PR #3 merged](https://github.com/xxiamadelxx-blip/cherny-vestnik-/pull/3), main `b241075`. PR #2 was superseded after its genuinely failed 143/146 run, not silently re-labelled.
+- **PASS (secondary narrow SQL check):** in-memory SQLite reproduced a frozen `window_end` and missing `window_start`, confirmed a deterministic 21:00 cutoff, persistence of start, all 95 pre-cutoff posts, and exclusion of 10 later posts. This check supports, but does NOT replace, the 146-test independent run.
+- **OPEN (production proof):** last verified Cloudflare deploy [39768247686](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39768247686) built `2e26d910`. No independently verified Worker deployment yet includes `6755474` or merged `b241075`. Treat scheduled-cutoff fix as **DEPLOY BLOCKED**, not M4 PASS. The connected GitHub action API can read logs and re-run historical jobs but has no supported new workflow-dispatch action; re-running a historical deploy would deploy the old SHA.
+- **Next exact operation:** [dispatch the existing Deploy workflow](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/workflows/deploy.yml) on main `b241075`, confirm its run conclusion PASS and Worker code revision, then close M4. Do not repeat accepted M0–M3 tests without a reason.
+
 ## Уже известные следующие внешние критерии (без выдумывания новых M-этапов)
 1. **Реальный Telegram group E2E: NOT RUN.** Группа должна добровольно добавить существующего бота и включить сбор, затем проверить `/enable → сообщения → /now → следующий Cron`; ни один синтетический тест не заменяет этот критерий.
 2. **Реальный Qwen 1000-message daytime E2E: NOT RUN** на актуальном SHA и в рамках доступной бесплатной квоты. Ранее 1000/1000 были проверены в старом вечернем конвейере, а текущий daytime вариант проверен синтетически.
 3. **Приёмка текста редактором: NOT ACCEPTED.** Успешные численные критерии брани/ссылок не доказывают, что статья смешная и свободна от фактических выдумок.
 
 ### Текущая остановка
-**Открытый этап: M4.** Не объявлять его DONE, пока не пройдут исправленные CI + deployment. После PASS переход к следующему независимо выполнимому критерию из списка, не перепроверяя M0–M3 без причины.
+**Открытый этап: M4, deployment BLOCKED.** Независимый CI на исправленном коде PASS 146/146; облачная публикация этой версии не доказана. После PASS деплоя перейти к реальному тестовому Telegram E2E; пока внешний блокер сохраняется, допустимы только независимые задачи из существующих критериев (не новые улучшения).
