@@ -402,3 +402,26 @@ test('active group cannot receive a newspaper with only one source pointer',asyn
  assert.equal(f.sent.filter(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,0);
  assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
 });
+
+
+test('editorial rewrite sees all small-chat source rows, not only first-draft citations',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ for(let id=101;id<=116;id++)
+   await handleUpdate(f.makeMsg({id,from:id%2?1:2,text:'День: разные планы и споры '+id}),f.env,f.fetcher,NOW-300000);
+ f.setAISequence([
+   '💀 ЧЁРНЫЙ ВЕСТНИК. Одна реплика [#101].',
+   '💀 ЧЁРНЫЙ ВЕСТНИК\\n🔥 Главное позорище\\nПервое обещание [#101]. Блядь, составили расписание из оправданий.\\n⚔️ Главный срач\\nВторой спор [#108]. Нахуй все пустые отговорки: календарь уже сдался.\\n🏆 Номинации\\nГерой терпения и главный специалист по переносам.\\n🪦 Приговор дня\\nФинальная переписка [#116]. Ёбаный комитет по достижению завтрашнего вчера.'
+ ]);
+ const requests=[];
+ const observed=async(url,options)=>{
+   if(String(url).includes('api.groq.com'))requests.push(JSON.parse(options.body));
+   return f.fetcher(url,options);
+ };
+ assert.equal(await publishDigest(f.env,'-1001111',NOW,observed),'sent');
+ assert.equal(requests.length,2);
+ const repair=requests[1].messages.at(-1).content;
+ assert.match(repair,/\\[#101\\]/);
+ assert.match(repair,/\\[#116\\]/);
+ assert.ok(f.sent.some(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')));
+});
