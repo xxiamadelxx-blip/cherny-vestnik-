@@ -380,7 +380,7 @@ test('Qwen editorial revision receives a precise reason when another speaker inv
   };
   f.setAISequence([
     '💀 ЧЁРНЫЙ ВЕСТНИК. Вася купил экономию в кредит [#102].',
-    '💀 ЧЁРНЫЙ ВЕСТНИК. Петя пошутил об экономии и кредитах [#102], но Вася только заказал кофемашину [#101].'
+    '💀 ЧЁРНЫЙ ВЕСТНИК. Петя пошутил об экономии и кредитах [#102], а подтверждения самого кредита нет.'
   ]);
   assert.equal(await publishDigest(f.env,'-1001111',NOW,observed),'sent');
   assert.equal(f.groqCalls,2);
