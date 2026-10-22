@@ -1,6 +1,6 @@
 import {
   ONE_DAY_MS, MESSAGE_RETENTION_MS, MEMORY_RETENTION_MS, localClock,
-  scheduledDue, normalizeMessage, splitTelegramText, packTranscript
+  scheduledDue, scheduledEpochForDay, normalizeMessage, splitTelegramText, packTranscript
 } from './core.js';
 import {createDigest,analyzeChunk,composeDigest,reviseDigest} from './ai.js';
 import {send, isAdmin} from './telegram.js';
@@ -366,12 +366,27 @@ export async function runCron(env, now = Date.now(), fetcher = fetch) {
   await run(env.DB,`DELETE FROM digest_reductions WHERE updated_at<? AND NOT EXISTS (
     SELECT 1 FROM digests d WHERE d.chat_id=digest_reductions.chat_id
       AND d.local_day=digest_reductions.local_day AND d.status IN ('pending','working'))`,now-4*ONE_DAY_MS);
-  const {hhmm} = localClock(now,env.BOT_TIME_ZONE || 'Europe/Moscow');
-  const chats = await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
-    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id AND d.status IN ('pending','working') AND d.window_end IS NOT NULL ORDER BY d.local_day LIMIT 1) AS pending_day
-    FROM chats c WHERE c.enabled=1`);
+  const zone=env.BOT_TIME_ZONE||'Europe/Moscow';
+  const {day:today,hhmm}=localClock(now,zone);
+  const chats=await all(env.DB,`SELECT c.chat_id,c.digest_hhmm,
+    (SELECT d.local_day FROM digests d WHERE d.chat_id=c.chat_id
+       AND d.status IN ('pending','working')
+       AND (d.window_end IS NOT NULL OR d.local_day<?)
+       ORDER BY d.local_day LIMIT 1) AS pending_day
+    FROM chats c WHERE c.enabled=1`,today);
   const outcomes = [];
   for (const chat of chats) {
+    // If the 21:00 Cron was unavailable, close yesterday's window at its
+    // ACTUAL scheduled time, not 'now'; leave later posts for the next issue.
+    if(chat.pending_day&&chat.pending_day<today){
+      const deadline=scheduledEpochForDay(chat.pending_day,chat.digest_hhmm,zone);
+      if(deadline<=now){
+        await run(env.DB,`UPDATE digests SET window_end=?,updated_at=?
+          WHERE chat_id=? AND local_day=? AND window_end IS NULL
+            AND status IN ('pending','working') AND lease_until<?`,
+          deadline,now,chat.chat_id,chat.pending_day,now);
+      }
+    }
     if (!chat.pending_day && !scheduledDue(chat.digest_hhmm,hhmm)) {
       try {
         const result=await preprocessDigest({env,chatId:chat.chat_id,now,fetcher});
