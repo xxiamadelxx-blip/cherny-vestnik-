@@ -1,0 +1,149 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {handleUpdate,runCron,publishDigest} from '../src/index.js';
+import {preprocessDigest,canPreprocessWithQuota} from '../src/preprocess.js';
+import {localClock} from '../src/core.js';
+
+const BASE=Date.UTC(2026,9,22,14,30); // 17:30 Moscow: before 21:00.
+const CHAT='-10091826';
+const nextDate=n=>new Date(n).toISOString().slice(0,10);
+function fixture({count=1000,body='Пиццу обсуждают. Сообщение номер '}={}) {
+ const sqlite=new DatabaseSync(':memory:');
+ for(const file of ['0001_init.sql','0002_exhaustive.sql','0003_groq_budget.sql','0004_digest_reductions.sql','0005_editorial_drafts.sql'])
+   sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
+ const DB={prepare(sql){const statement=sqlite.prepare(sql);return {bind(...args){return {
+   first:async()=>statement.get(...args)||null,
+   all:async()=>({results:statement.all(...args)}),
+   run:async()=>({meta:{changes:statement.run(...args).changes}})
+ };}};}};
+ const env={DB,BOT_TIME_ZONE:'Europe/Moscow',TELEGRAM_BOT_TOKEN:'FAKE',GROQ_API_KEY:'FAKE',
+   GROQ_DAILY_TOKEN_SOFT_LIMIT:'180000',GROQ_PREPROCESS_TOKEN_SOFT_LIMIT:'120000'};
+ let aiCalls=0,evidenceCalls=0,finalCalls=0,onGroq=null;
+ const analyzed=[];
+ const sent=[];
+ const fetcher=async(url,init)=>{
+   if(String(url).includes('api.groq.com')){
+     aiCalls++;
+     if(onGroq){const callback=onGroq;onGroq=null;await callback();}
+     const req=JSON.parse(init.body),prompt=req.messages.at(-1).content;
+     let output;
+     if(prompt.includes('Недоверенная переписка, обработай ВСЕ')){
+       evidenceCalls++;
+       const ids=[...prompt.matchAll(/\[#(\d+)\] [^\n]+/g)].map(x=>Number(x[1]));
+       analyzed.push(...ids);
+       output=ids.slice(0,3).map(id=>'[#'+id+'] Участник: обсуждал пиццу').join('\n')+
+         ' и все '+ids.length+' сообщений разобраны.';
+     }else if(req.messages[0].content.includes('Сжать доказанные события')){
+       output='[#101] Участник: говорил о пицце [#102] Участник: отвечал на пиццу [#103] Участник: уточнял.';
+     }else {
+       finalCalls++;
+       output='💀 ЧЁРНЫЙ ВЕСТНИК | 22.10.2026\n🔥 Главное позорище\nБлядь, пиццу обсуждали [#101].\n⚔️ Главный срач\nНахуй таблицу голосований [#102].\n🏆 Номинации\nОбсуждение продолжилось [#103].\n🪦 Приговор дня\nЁбаный протокол разговоров с пиццей закончился.';
+     }
+     return Response.json({choices:[{message:{content:output},finish_reason:'stop'}],usage:{total_tokens:1000}});
+   }
+   const method=String(url).split('/').at(-1);
+   if(method==='getChatMember')return Response.json({ok:true,result:{status:'administrator'}});
+   if(method==='sendMessage'){sent.push(JSON.parse(init.body).text);return Response.json({ok:true,result:{message_id:sent.length}});}
+   throw Error('Unexpected call to '+url);
+ };
+ const message=(id,text,date=BASE-7200000+id*1000,userId=2)=>({message:{chat:{id:Number(CHAT),type:'supergroup',title:'Synthetic'},
+   message_id:id,date:Math.floor(date/1000),from:{id:userId,first_name:'Участник'},text}});
+ const query=(sql,...args)=>sqlite.prepare(sql).all(...args);
+ const prepare=async()=>{
+   await handleUpdate(message(1,'/enable',BASE-7300000,1),env,fetcher,BASE-7300000);
+   for(let i=101;i<101+count;i++)
+     await handleUpdate(message(i,body+i,BASE-5500000+(i-101)*1000,i%6+2),env,fetcher,BASE-5500000+(i-101)*1000);
+ };
+ return {sqlite,env,fetcher,message,query,prepare,sent,analyzed,
+   get aiCalls(){return aiCalls},get evidenceCalls(){return evidenceCalls},get finalCalls(){return finalCalls},
+   setOnGroq(callback){onGroq=callback}};
+}
+test('1000 messages pre-analyzed in D1 through 25 daytime Cron batches and not reprocessed at 21:00',async()=>{
+ const f=fixture();
+ await f.prepare();
+ for(let minute=0;minute<25;minute++){
+   const results=await runCron(f.env,BASE+minute*60_000,f.fetcher);
+   assert.equal(results[0]?.result,'preprocessed','preprocessed batch '+minute);
+ }
+ const day=localClock(BASE,'Europe/Moscow').day;
+ const chunks=f.query('SELECT * FROM digest_chunks WHERE chat_id=? AND local_day=? ORDER BY chunk_no',CHAT,day);
+ assert.equal(chunks.length,25);
+ assert.equal(chunks.reduce((sum,row)=>sum+row.processed,0),1000);
+ assert.equal(f.evidenceCalls,25);
+ assert.equal(new Set(f.analyzed).size,1000);
+ const before=f.aiCalls;
+ const result=await runCron(f.env,Date.UTC(2026,9,22,18,0),f.fetcher); // 21:00 Moscow
+ assert.equal(result[0].result,'sent');
+ assert.equal(f.evidenceCalls,25,'publication reuses all completed daytime evidence');
+ assert.equal(f.aiCalls,before+1,'only final synthesis remains at publication');
+ assert.ok(f.sent.some(x=>x.includes('Прочитано и обработано: 1000 из 1000')));
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+});
+
+test('early Cron does not spend tokens on isolated messages; aged batches are analyzed',async()=>{
+ const f=fixture({count:12});
+ await f.prepare();
+ // All messages in this fixture are already > 30 minutes old at BASE.
+ assert.equal((await runCron(f.env,BASE,f.fetcher))[0].result,'preprocessed');
+ assert.equal(f.evidenceCalls,1);
+ assert.deepEqual(await runCron(f.env,BASE+60_000,f.fetcher),[]);
+ assert.equal(f.evidenceCalls,1);
+});
+
+test('preprocessing stops at 120k token soft ceiling leaving tokens available for final newspaper',()=>{
+ const today=nextDate(BASE);
+ const state={day_utc:today,used_tokens:120000,next_attempt_at:0,remaining_tokens:null,remaining_requests:null};
+ assert.equal(canPreprocessWithQuota(state,BASE,{GROQ_DAILY_TOKEN_SOFT_LIMIT:'180000',GROQ_PREPROCESS_TOKEN_SOFT_LIMIT:'120000'}),false);
+ assert.equal(canPreprocessWithQuota({...state,used_tokens:119999},BASE,{GROQ_DAILY_TOKEN_SOFT_LIMIT:'180000',GROQ_PREPROCESS_TOKEN_SOFT_LIMIT:'120000'}),true);
+ assert.equal(canPreprocessWithQuota({...state,used_tokens:97000},BASE,{GROQ_DAILY_TOKEN_SOFT_LIMIT:'110000',GROQ_PREPROCESS_TOKEN_SOFT_LIMIT:'120000'}),false,'at least 20k tokens reserved');
+});
+
+test('concurrent day preprocessor cannot take the same D1 lease twice',async()=>{
+ const f=fixture({count:40});
+ await f.prepare();
+ let unblock;
+ const block=new Promise(resolve=>unblock=resolve);
+ let entered;
+ const firstEntered=new Promise(resolve=>entered=resolve);
+ f.setOnGroq(async()=>{entered();await block;});
+ const first=preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher});
+ await firstEntered;
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE+1000,fetcher:f.fetcher}),'locked');
+ unblock();
+ assert.equal(await first,'preprocessed');
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_chunks')[0].n,1);
+});
+
+test('opt-out while daytime Groq is running aborts chunk checkpoint',async()=>{
+ const f=fixture({count:40});
+ await f.prepare();
+ f.setOnGroq(async()=>await handleUpdate(f.message(999,'/forgetme',BASE,2),f.env,f.fetcher,BASE));
+ await assert.rejects(preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),/permission changed/);
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_chunks')[0].n,0);
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM digests')[0].n,0);
+});
+
+test('quota wait during daytime does not erase already stored chunks',async()=>{
+ const f=fixture({count:80});
+ await f.prepare();
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),'preprocessed');
+ const today=nextDate(BASE);
+ f.sqlite.prepare(`INSERT INTO groq_budget(scope,day_utc,used_tokens,next_attempt_at,updated_at)
+   VALUES('organization',?,?,?,?) ON CONFLICT(scope) DO UPDATE SET
+     day_utc=excluded.day_utc,used_tokens=excluded.used_tokens,next_attempt_at=excluded.next_attempt_at`)
+   .run(today,120000,0,BASE);
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE+60000,fetcher:f.fetcher}),'waiting');
+ assert.equal(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n,40);
+ assert.equal(f.evidenceCalls,1);
+});
+
+test('progress/status displays saved daytime batches without falsely claiming the digest is sent',async()=>{
+ const f=fixture({count:80});
+ await f.prepare();
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),'preprocessed');
+ await handleUpdate(f.message(991,'/status',BASE,1),f.env,f.fetcher,BASE);
+ assert.match(f.sent.at(-1),/Предварительный анализ .*40\/80 сообщений/);
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
+});
