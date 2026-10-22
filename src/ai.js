@@ -132,7 +132,7 @@ export async function reviseDigest({env,day,draft,citedRows=[],editorialFeedback
   const result=await groq(env,[
     {role:'system',content:systemPrompt()+'\nЦель сейчас: точно исправить неверные прямые цитаты и неверную атрибуцию; не добавляй новых источников.'},
     {role:'user',content}
-  ],fetcher,2000,0.3);
+  ],fetcher,2000,0.6);
   return safeAiOutput(result,new Set(citedRows.map(row=>Number(row.message_id))));
 }
 
