@@ -144,7 +144,8 @@ export function verifyUnprovenLoanClaims(body,sourceRows) {
 // offending sentence is dropped, all other source-cited stories remain intact.
 // The complete digest is validated again after this conservative operation.
 export function dropUnverifiedLoanSentences(body,sourceRows) {
-  return String(body??'').replace(/[^.!?\n]+[.!?]?/gu,part=>{
+  const raw=String(body??'');
+  const filtered=raw.replace(/[^.!?\n]+[.!?]?/gu,part=>{
     try {verifyUnprovenLoanClaims(part,sourceRows);return part;}
     catch(error) {
       if(error instanceof EvidenceValidationError &&
@@ -152,6 +153,9 @@ export function dropUnverifiedLoanSentences(body,sourceRows) {
       throw error;
     }
   });
+  // If deletion removes ALL source anchors, never publish an empty masthead.
+  // Keep the original rejected text for the existing fact-checked AI rewrite.
+  return filtered!==raw && !citedMessageIds(filtered).length ? raw:filtered;
 }
 
 export function verifyEditorialEvidence(body, sourceRows) {
