@@ -37,7 +37,7 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
   // completed window, or at the earliest captured message for a new group.
   const prev=await row(db,'SELECT MAX(window_end) AS last_end FROM digests WHERE chat_id=? AND local_day!=? AND window_end IS NOT NULL',String(chatId),day);
   const earliest=await row(db,'SELECT MIN(posted_at) AS first_at FROM messages WHERE chat_id=?',String(chatId));
-  const start=existing?.window_start??prev?.last_end??earliest?.first_at;
+  const start=existing?.window_start??prev?.last_end??(earliest?.first_at==null?null:Math.min(Number(earliest.first_at),now-ONE_DAY_MS));
   if(start===null||start===undefined||Number(start)>=now)return 'idle';
 
   const count=Number((await row(db,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',String(chatId),start,now))?.n||0);
