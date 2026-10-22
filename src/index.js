@@ -236,8 +236,9 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',
         chatId,digestWindow.window_start,digestWindow.window_end))?.n||0);
       const verifyEditorialGate=(draft,sourceRows)=>{
-        verifyEditorialEvidence(draft,sourceRows);
+        const evidence=verifyEditorialEvidence(draft,sourceRows);
         if(sourceCount>=12) {
+          if(evidence.cited<3)throw new EvidenceValidationError('too few verified sources for active chat');
           const quality=assessRoastSignals(analyzeRoastTone(draft,sourceRows));
           if(!quality.pass)throw new EvidenceValidationError('roast quality: '+quality.problems.join('; '));
         }
