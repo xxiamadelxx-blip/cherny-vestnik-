@@ -141,11 +141,23 @@ export async function run({key=process.env.GROQ_API_KEY,fetcher=fetch,log=consol
  const stored=sqlite.prepare('SELECT status,body FROM digests WHERE chat_id=?').get(CHAT);
  assert.equal(outcome,'sent','live Groq did not complete the accepted digest');
  assert.equal(stored.status,'sent');
- const evidence=verifyEditorialEvidence(stored.body,source);
- // The model may prefer safe paraphrases to risky verbatim quotes.
- // Every literal quote it *does* use has already been validated above.
- // Require grounded references, not an arbitrary minimum number of quotes.
- assert.ok(evidence.cited>=3,'A grounded newspaper needs at least three verified source IDs');
+ let evidence;
+ try {
+   evidence=verifyEditorialEvidence(stored.body,source);
+   assert.ok(evidence.cited>=3,'A grounded newspaper needs at least three verified source IDs');
+ } catch(error) {
+   mkdirSync('reports',{recursive:true});
+   writeFileSync('reports/editorial-live-failed.md',[
+     '# Unaccepted live Groq newspaper',
+     'Reason: '+String(error.message),
+     'Groq calls: '+aiCalls,
+     '## Intermediate completions',
+     ...observedCompletions.flatMap((draft,index)=>['### Completion '+(index+1),'~~~text',draft,'~~~']),
+     '## Final unpublished newspaper','~~~text',String(stored.body||''),'~~~',
+     '## Synthetic sources',...source.map(m=>'[#'+m.message_id+'] '+m.display_name+': '+m.body)
+   ].join('\n'));
+   throw error;
+ }
  const total=sqlite.prepare('SELECT COUNT(*) AS n FROM messages').get().n;
  assert.equal(total,30);
  assert.ok(aiCalls>=1&&aiCalls<=4,'bounded Groq calls including editorial correction');
