@@ -7,7 +7,7 @@ import {send, isAdmin} from './telegram.js';
 import {pollTelegram,pollPageBudget} from './polling.js';
 import {GroqDeferredError,readGroqBudget,quotaWaitUntil} from './quota.js';
 import {analyzeRoastTone,assessRoastSignals} from './roast-quality.js';
-import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,dropUnverifiedLoanSentences,EvidenceValidationError} from './evidence.js';
+import {verifyEditorialEvidence,fetchCitedMessages,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,dropUnverifiedLoanSentences,dropUnverifiableQuoteSentences,EvidenceValidationError} from './evidence.js';
 
 const OK = () => new Response('ok', {status:200});
 const PUBLIC_VERSION = '0.2.2';
@@ -226,6 +226,8 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       // Do not publish an empty headline after removing the only factual claim.
       // Let independent fact-check trigger a source-grounded rewrite instead.
       if(scrubbed===body || /\[#\d+\]/u.test(scrubbed))body=scrubbed;
+      const quoteScrubbed=dropUnverifiableQuoteSentences(body,citedRows);
+      if(quoteScrubbed===body || /\[#\d+\]/u.test(quoteScrubbed))body=quoteScrubbed;
       // An accurate but lifeless digest is not accepted as a finished
       // newspaper. Only apply the full-length roast check to active chats,
       // never force several jokes out of a nearly empty day.
@@ -261,6 +263,8 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
         body=correctNearMissQuotes(body,verifiedRows);
         const rescrubbed=dropUnverifiedLoanSentences(body,verifiedRows);
         if(rescrubbed===body || /\[#\d+\]/u.test(rescrubbed))body=rescrubbed;
+        const quoteRescrubbed=dropUnverifiableQuoteSentences(body,verifiedRows);
+        if(quoteRescrubbed===body || /\[#\d+\]/u.test(quoteRescrubbed))body=quoteRescrubbed;
         await checkConsent();
         await run(db, 'UPDATE digests SET editorial_draft=?,editorial_attempts=editorial_attempts+1,updated_at=? WHERE chat_id=? AND local_day=?',
           body,now,chatId,day);
