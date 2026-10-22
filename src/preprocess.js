@@ -45,7 +45,9 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
   // unavailable at 21:00, the next day can still close the right day.
   await run(db,`INSERT OR IGNORE INTO digests
     (chat_id,local_day,status,lease_until,next_part,updated_at,window_start)
-    VALUES(?,?,'pending',0,0,?,?)`,String(chatId),day,now,start);
+    SELECT ?,?,'pending',0,0,?,? WHERE EXISTS
+      (SELECT 1 FROM chats WHERE chat_id=? AND enabled=1 AND privacy_epoch=?)`,
+    String(chatId),day,now,start,String(chatId),chat.privacy_epoch);
   const count=Number((await row(db,'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?',String(chatId),start,now))?.n||0);
   const processed=Number((await row(db,'SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks WHERE chat_id=? AND local_day=?',String(chatId),day))?.n||0);
   // Deletions normally invalidate chunks via privacy_epoch; if anything else
@@ -65,8 +67,9 @@ export async function preprocessDigest({env,chatId,now=Date.now(),fetcher=fetch}
   const lease=now+LEASE_MS;
   const claim=await run(db,`UPDATE digests SET lease_until=?,status='working',updated_at=?
     WHERE chat_id=? AND local_day=? AND window_end IS NULL
-      AND status IN ('pending','working') AND lease_until<?`,
-    lease,now,String(chatId),day,now);
+      AND status IN ('pending','working') AND lease_until<?
+      AND EXISTS (SELECT 1 FROM chats WHERE chat_id=? AND enabled=1 AND privacy_epoch=?)`,
+    lease,now,String(chatId),day,now,String(chatId),chat.privacy_epoch);
   if(!claim.meta?.changes)return 'locked';
   try{
     const stillAllowed=async()=>{
