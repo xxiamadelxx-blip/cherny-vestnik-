@@ -230,3 +230,25 @@ test('missed 21:00 Cron closes earlier day at its original Moscow deadline and l
  const late=f.query('SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=?',CHAT,cutoff)[0].n;
  assert.equal(late,10);
 });
+
+
+test('group disable while daytime AI is reading aborts the checkpoint and clears open draft',async()=>{
+ const f=fixture({count:40});
+ await f.prepare();
+ f.setOnGroq(async()=>await handleUpdate(f.message(994,'/disable',BASE,1),f.env,f.fetcher,BASE));
+ await assert.rejects(preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),/permission changed/);
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM digest_chunks')[0].n,0);
+ assert.equal(f.query('SELECT COUNT(*) AS n FROM digests')[0].n,0);
+ assert.equal(f.query('SELECT enabled FROM chats')[0].enabled,0);
+});
+
+test('/status explicitly distinguishes final-publication reserve from Groq API downtime',async()=>{
+ const f=fixture({count:80});
+ await f.prepare();
+ await preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher});
+ const today=new Date().toISOString().slice(0,10);
+ f.sqlite.prepare("UPDATE groq_budget SET used_tokens=120000,day_utc=? WHERE scope='organization'").run(today);
+ await handleUpdate(f.message(998,'/status',BASE,1),f.env,f.fetcher,BASE);
+ assert.match(f.sent.at(-1),/Фоновый анализ ждёт сброса лимита/);
+ assert.match(f.sent.at(-1),/запросы разрешены/);
+});
