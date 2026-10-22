@@ -388,3 +388,17 @@ test('Qwen editorial revision receives a precise reason when another speaker inv
   assert.match(payloads[1].messages[1].content,/credit claim/);
   assert.match(f.sent.at(-1).text,/Петя пошутил/);
 });
+
+
+test('active group cannot receive a newspaper with only one source pointer',async()=>{
+ const f=fixture();
+ await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+ for(let id=101;id<=116;id++){
+   await handleUpdate(f.makeMsg({id,from:id%2?1:2,text:'Дневной разговор и планы '+id}),f.env,f.fetcher,NOW-300000);
+ }
+ const single='💀 ЧЁРНЫЙ ВЕСТНИК\\n🔥 Главное позорище\\n⚔️ Главный срач\\n🏆 Номинации\\n🪦 Приговор дня\\nПервый герой написал о планах [#101].';
+ f.setAIResponse(single);
+ await assert.rejects(publishDigest(f.env,'-1001111',NOW,f.fetcher),/too few verified sources/);
+ assert.equal(f.sent.filter(x=>x.text.includes('ЧЁРНЫЙ ВЕСТНИК')).length,0);
+ assert.equal(f.query('SELECT editorial_attempts FROM digests')[0].editorial_attempts,1);
+});
