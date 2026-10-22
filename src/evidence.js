@@ -265,6 +265,18 @@ function sameStem(a,b) {
 function nearestLiteralSource(quote,source) {
   const required=sourceWords(quote).map(t=>t.word);
   const words=sourceWords(source);
+  if(required.length===1 && words.length<=800) {
+    // Single-word morphological near-miss, e.g. quoted nominative vs an
+    // inflected word. Require exactly ONE source candidate sharing 4 Unicode
+    // letters, a small length difference, and a match within the same ID.
+    // This never invents a word: returns the verbatim source token.
+    const term=required[0];
+    if(term.length<5)return null;
+    const candidates=words.filter(x=>
+      x.word.length>=5 && Math.abs(x.word.length-term.length)<=2
+      && x.word.slice(0,4)===term.slice(0,4));
+    return candidates.length===1?source.slice(candidates[0].start,candidates[0].end):null;
+  }
   if(required.length<2||required.length>45||words.length>800)return null;
   let winner=null;
   const maxWidth=Math.min(180,Math.max(70,quote.length*3));
