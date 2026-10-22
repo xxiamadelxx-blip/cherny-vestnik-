@@ -366,3 +366,25 @@ test('tiny chat keeps factual delivery without artificial three-joke quota',asyn
   assert.equal(await publishDigest(f.env,'-1001111',NOW,f.fetcher),'sent');
   assert.equal(f.groqCalls,1);
 });
+
+
+test('Qwen editorial revision receives a precise reason when another speaker invents a loan',async()=>{
+  const f=fixture();
+  await handleUpdate(f.makeMsg({id:1,text:'/enable'}),f.env,f.fetcher,NOW-400000);
+  await handleUpdate(f.makeMsg({id:101,from:1,text:'Я заказал кофемашину.'}),f.env,f.fetcher,NOW-300000);
+  await handleUpdate(f.makeMsg({id:102,from:2,text:'Вася купил экономию в кредит, ха-ха!'}),f.env,f.fetcher,NOW-300000);
+  const payloads=[];
+  const observed=async(url,init)=>{
+    if(String(url).includes('api.groq.com'))payloads.push(JSON.parse(init.body));
+    return f.fetcher(url,init);
+  };
+  f.setAISequence([
+    '💀 ЧЁРНЫЙ ВЕСТНИК. Вася купил экономию в кредит [#102].',
+    '💀 ЧЁРНЫЙ ВЕСТНИК. Петя пошутил об экономии и кредитах [#102], но Вася только заказал кофемашину [#101].'
+  ]);
+  assert.equal(await publishDigest(f.env,'-1001111',NOW,observed),'sent');
+  assert.equal(f.groqCalls,2);
+  assert.match(payloads[1].messages[1].content,/Фактическая ошибка/);
+  assert.match(payloads[1].messages[1].content,/credit claim/);
+  assert.match(f.sent.at(-1).text,/Петя пошутил/);
+});
