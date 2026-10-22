@@ -283,3 +283,20 @@ test('do not remove supported credit admissions or explicit reported rumors',()=
  assert.equal(dropUnverifiedLoanSentences(admitted,source),admitted);
  assert.equal(dropUnverifiedLoanSentences(attributed,source),attributed);
 });
+
+
+test('loan-slavery metaphor is not proof of an actual borrowing obligation',()=>{
+ const originals=[
+  {message_id:1001,display_name:'Саня',body:'Не куплю кофемашину, дорого.'},
+  {message_id:1015,display_name:'Саня',body:'Всё, я заказал кофемашину.'},
+  {message_id:1030,display_name:'Дима',body:'Саня купил экономию в кредит, ха-ха.'}
+ ];
+ const allegation='Саня купил кредитное рабство на два года [#1015].';
+ assert.throws(()=>verifyEditorialEvidence(allegation,originals),
+   err=>err instanceof EvidenceValidationError&&/credit claim/.test(err.message));
+ const body='Саня заказал кофемашину [#1015]. Кредитное рабство на два года [#1030].';
+ const safe=dropUnverifiedLoanSentences(body,originals);
+ assert.doesNotMatch(safe,/рабство/);
+ assert.match(safe,/заказал/);
+ assert.doesNotThrow(()=>verifyEditorialEvidence(safe,originals));
+});
