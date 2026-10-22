@@ -202,3 +202,11 @@ Operating policy: no unconfirmed direct quotes, unconfirmed loans, or categorica
 - **Known free-tier boundary:** 1000 very long messages, late daily message spikes, 429s or organization-wide quota exhaustion can delay the issue. The implementation refuses to present a sampled or partial day as complete.
 
 **Daytime quota architecture verdict: PASS for implementation and automated integration. Real-group production acceptance: OPEN.**
+
+## Cutoff regression: delayed same-evening Cron (22 October 2026)
+
+- **CONFIRMED PREVIOUS BASELINE:** [143/143 tests PASS](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39768494714). This result predates the cutoff patch.
+- **FIX IMPLEMENTED, CI NOT YET ACCEPTED:** [commit 45265f2](https://github.com/xxiamadelxx-blip/cherny-vestnik-/commit/45265f2d69581fdbb1a3d5aaca688ccf138e3758). A scheduled newspaper closes its source window at the configured local publication time even when Telegram backlog or Cloudflare delays Cron within that same local day. Manual `/now` still uses the invocation instant.
+- **REGRESSION EVIDENCE PENDING:** [PR #2](https://github.com/xxiamadelxx-blip/cherny-vestnik-/pull/2) adds a separate manual-`/now` test and the first-ever delayed-window case on top of the new same-evening 40+10 boundary test. [Actions run](https://github.com/xxiamadelxx-blip/cherny-vestnik-/actions/runs/39815032308) is queued. This is **PENDING**, not PASS.
+- **PRODUCTION DEPLOY PENDING:** the last independently verified deployed commit remains `2e26d910`; subsequent changes at `d89dd597` and `409408d66` were tests/docs only, while the new runtime change `45265f2` has not been confirmed in Cloudflare. Do not mark it production-ready before the current CI and deploy finish.
+- **NON-GOALS:** no Telegram group added; no real 1000-message live-Groq test in this iteration; no claim that subjective roast humor is yet accepted.
