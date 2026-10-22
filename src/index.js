@@ -165,10 +165,15 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
       if(!body){
       const prev = await row(db, `SELECT MAX(window_end) AS last_end FROM digests
         WHERE chat_id=? AND status='sent' AND local_day!=?`, chatId, day);
-      const start = job.window_start ?? prev?.last_end ?? now - ONE_DAY_MS;
       const end = job.window_end ?? now;
-      if (job.window_end == null) {
-        await run(db, 'UPDATE digests SET window_start=?,window_end=? WHERE chat_id=? AND local_day=?', start,end,chatId,day);
+      // An overdue scheduled Cron may have frozen window_end already.
+      // Persist the missing start *independently*: otherwise every resumed
+      // attempt shifts its start and SQL coverage silently becomes empty.
+      const start = job.window_start ?? prev?.last_end ?? end - ONE_DAY_MS;
+      if (job.window_start == null || job.window_end == null) {
+        await run(db, `UPDATE digests
+          SET window_start=COALESCE(window_start,?),window_end=COALESCE(window_end,?)
+          WHERE chat_id=? AND local_day=?`, start,end,chatId,day);
       }
       const n = await row(db, 'SELECT COUNT(*) AS n FROM messages WHERE chat_id=? AND posted_at>=? AND posted_at<?', chatId,start,end);
       const total = Number(n?.n || 0);
