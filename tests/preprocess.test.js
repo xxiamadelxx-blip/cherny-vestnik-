@@ -147,3 +147,42 @@ test('progress/status displays saved daytime batches without falsely claiming th
  assert.match(f.sent.at(-1),/Предварительный анализ .*40\/80 сообщений/);
  assert.equal(f.query('SELECT status FROM digests')[0].status,'pending');
 });
+
+
+test('late Telegram update with an older timestamp never gets skipped by daytime cursor',async()=>{
+ const f=fixture({count:80});
+ await f.prepare();
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),'preprocessed');
+ // A delayed Telegram message is received after batch 0, but its original
+ // timestamp sorts BEFORE the messages in batch 0.
+ const lateId=9001;
+ await handleUpdate(f.message(lateId,'Опоздавшее обновление Telegram',BASE-5600000,4),f.env,f.fetcher,BASE+10);
+ let turns=0;
+ while(f.query('SELECT COALESCE(SUM(processed),0) AS n FROM digest_chunks')[0].n<81){
+   const result=await preprocessDigest({env:f.env,chatId:CHAT,now:BASE+1000+turns*60000,fetcher:f.fetcher});
+   assert.equal(result,'preprocessed');
+   turns++;
+   assert.ok(turns<6);
+ }
+ const rows=f.query('SELECT ids_json FROM digest_chunks ORDER BY chunk_no');
+ const ids=rows.flatMap(r=>JSON.parse(r.ids_json));
+ assert.equal(ids.length,81);
+ assert.equal(new Set(ids).size,81);
+ assert.ok(ids.includes(lateId),'delayed original Telegram ID must be analyzed');
+ assert.equal(ids[0],lateId,'the recorded prefix is correctly reordered');
+});
+
+test('publication invalidates a stale checkpoint even when 21:00 arrived before daytime repair',async()=>{
+ const f=fixture({count:40});
+ await f.prepare();
+ assert.equal(await preprocessDigest({env:f.env,chatId:CHAT,now:BASE,fetcher:f.fetcher}),'preprocessed');
+ const delayed=9002;
+ await handleUpdate(f.message(delayed,'Опоздавшее сообщение',BASE-5600000,4),f.env,f.fetcher,BASE+100);
+ const first=await publishDigest(f.env,CHAT,Date.UTC(2026,9,22,18,0),f.fetcher);
+ assert.equal(first,'processing','stale batch discarded; only two complete batches per Cron');
+ const source=f.query('SELECT ids_json FROM digest_chunks ORDER BY chunk_no').flatMap(x=>JSON.parse(x.ids_json));
+ assert.equal(source.length,40);
+ assert.equal(source[0],delayed);
+ assert.equal(await publishDigest(f.env,CHAT,Date.UTC(2026,9,22,18,1),f.fetcher),'sent');
+ assert.equal(f.query('SELECT status FROM digests')[0].status,'sent');
+});
