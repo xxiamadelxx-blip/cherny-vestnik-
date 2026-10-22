@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,verifyNoFabricatedScenes,verifyNarratedQuoteAttribution} from '../src/evidence.js';
+import {verifyEditorialEvidence,verifyPublishedDigest,citedMessageIds,EvidenceValidationError,canonicalDigestDate,correctNearbyNameTypos,correctNearMissQuotes,normalizeSourceMarkers,correctDirectSpeechAttribution,dropUnverifiedLoanSentences,verifyNoFabricatedScenes,verifyNarratedQuoteAttribution} from '../src/evidence.js';
 
 const rows=[
   {message_id:101,display_name:'Саня',body:'Я не буду включать автоприцел. Не надо мне этой помощи!'},
@@ -257,4 +257,29 @@ test('numeric reference ranges are rejected, never mistaken for two validated ci
  assert.throws(()=>verifyEditorialEvidence('Чат: опоздание [#704-705].',originals),
   err=>err instanceof EvidenceValidationError&&/ID range/.test(err.message));
  assert.doesNotThrow(()=>verifyEditorialEvidence('Игорь писал [#704], Лиза ответила [#705].',originals));
+});
+
+
+test('uncorroborated loan sentence is omitted without removing other grounded comedy',()=>{
+ const source=[
+  {message_id:1001,display_name:'Саня',body:'Заказал кофемашину за сорок тысяч.'},
+  {message_id:1030,display_name:'Дима',body:'Саня купил экономию в кредит, ха-ха.'}
+ ];
+ const initial='🔥 Главное позорище\nСаня купил кредит под видом экономии [#1030]. Бизнес-план на кухонных салфетках, блядь [#1001].';
+ assert.throws(()=>verifyEditorialEvidence(initial,source),/credit claim/);
+ const corrected=dropUnverifiedLoanSentences(initial,source);
+ assert.doesNotMatch(corrected,/купил кредит/);
+ assert.match(corrected,/Бизнес-план/);
+ assert.match(corrected,/🔥 Главное позорище/);
+ assert.doesNotThrow(()=>verifyEditorialEvidence(corrected,source));
+});
+test('do not remove supported credit admissions or explicit reported rumors',()=>{
+ const source=[
+  {message_id:10,display_name:'Саня',body:'Я взял кофемашину в кредит.'},
+  {message_id:11,display_name:'Дима',body:'Саня купил экономию в кредит, шутка.'}
+ ];
+ const admitted='Саня купил кофемашину в кредит [#10].';
+ const attributed='По словам Димы, Саня якобы купил экономию в кредит [#11].';
+ assert.equal(dropUnverifiedLoanSentences(admitted,source),admitted);
+ assert.equal(dropUnverifiedLoanSentences(attributed,source),attributed);
 });
