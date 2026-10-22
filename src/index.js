@@ -253,7 +253,16 @@ export async function publishDigest(env, chatId, now = Date.now(), fetcher = fet
           assessRoastSignals(analyzeRoastTone(body,citedRows)).problems:
           ['Фактическая ошибка: '+err.message.replace(/^Editorial verification rejected:\s*/, '')+
             '. Удали неподтверждённый факт вместо повторения его из чужой шутки.'];
-        const revised=await reviseDigest({env,day,draft:body,citedRows,editorialFeedback:feedback,fetcher});
+        // For small chats, let the correction model see the whole original
+        // transcript again. A first draft with only one citation cannot recover
+        // the other topics if a rewrite sees just that single cited message.
+        // Large chats retain the limited, previously cited evidence contract.
+        const repairSources=sourceCount>0&&sourceCount<=40?
+          await all(db,`SELECT message_id,display_name,body FROM messages
+            WHERE chat_id=? AND posted_at>=? AND posted_at<?
+            ORDER BY posted_at,message_id LIMIT 40`,
+            chatId,digestWindow.window_start,digestWindow.window_end):citedRows;
+        const revised=await reviseDigest({env,day,draft:body,citedRows:repairSources,editorialFeedback:feedback,fetcher});
         const coverage=body.match(/📊 Прочитано и обработано: \d+ из \d+ сообщений\./);
         body=coverage && !revised.includes(coverage[0])?revised+'\n\n'+coverage[0]:revised;
         body=canonicalDigestDate(body,day);
