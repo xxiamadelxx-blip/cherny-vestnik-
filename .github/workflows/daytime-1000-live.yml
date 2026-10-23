@@ -1,0 +1,41 @@
+name: Real Groq Daytime 1000 Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/daytime-1000-live.yml'
+permissions:
+  contents: read
+concurrency:
+  group: daytime-1000-real-qwen-acceptance
+  cancel-in-progress: false
+jobs:
+  daytime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify dedicated acceptance script syntax without rerunning accepted unit tests
+        run: node --check scripts/daytime-1000-live.mjs
+      - name: Require existing free Groq credential
+        shell: bash
+        run: |
+          if [[ -z "$GROQ_API_KEY" ]]; then
+            echo "BLOCKED: GROQ_API_KEY secret missing"
+            exit 1
+          fi
+      - name: Real Qwen 1000-message daytime collection and final newspaper
+        run: node scripts/daytime-1000-live.mjs
+      - name: Preserve complete acceptance or quota-deferred report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daytime-1000-real-qwen-report
+          path: reports/daytime-1000-live.md
+          if-no-files-found: warn
